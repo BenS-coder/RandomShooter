@@ -1,11 +1,9 @@
 "use strict";
 
 //To do:
-//Set up enemies
 //optimize hitboxes
 //add rolling/dashing
 //set up map editor
-//screen shake???
 
 const CW = 64;//Cell width
 const WORLD_HEIGHT = 22; //In cells
@@ -14,10 +12,10 @@ const WORLD_CENTER_X = WORLD_WIDTH/2; //In cells
 const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 const PLAYER_HITBOX_SIZE = 0.75;
 const BULLET_HITBOX_SIZE = 0.1;
-const ENEMY_HITBOX_SIZE = 1;
-const SPEED = 2;
-const ENEMY_SPEED = 1;
-const ENEMY_INTERVAL = 100;
+const ENEMY_HITBOX_SIZE = 1.5;
+const SPEED = 1;
+const ENEMY_SPEED = 0.1;
+const ENEMY_INTERVAL = 1000;
 const PLAYER_BULLET_SPEED = 6;
 
 let bullet_interval = 100;
@@ -65,6 +63,8 @@ let view_width; //In pixels
 let view_height;
 let view_cell_width; //In cells
 let view_cell_height;
+let screen_shake_x = 0;
+let screen_shake_y = 0;
 
 let game_mode = 2;
 let gun = 0;
@@ -203,14 +203,14 @@ class Bullet {
     constructor(x, y, dx, dy, speed) {
         let l = (dx **2 + dy **2)**0.5
         if (gun == 0) {
-            this.dx = dx/l + Math.random()/10 - 0.05;
-            this.dy = dy/l + Math.random()/10 - 0.05;
+            this.dx = dx/l;
+            this.dy = dy/l;
         } else if (gun == 1) {
             this.dx = dx/l + Math.random()/2 - 0.25;
             this.dy = dy/l + Math.random()/2 - 0.25;
         } else if (gun == 2) {
-            this.dx = dx/l + Math.random()/5 - 0.1;
-            this.dy = dy/l + Math.random()/5 - 0.1;
+            this.dx = dx/l + Math.random()/10 - 0.05;
+            this.dy = dy/l + Math.random()/10 - 0.05;
         }
         this.speed = speed;
         this.x = x + this.dx;
@@ -335,7 +335,9 @@ function setUpTiles() {
     }
     crosshairs = [];
     for (let i = 0; i < 2; i++) {
-        crosshairs[i] = new Tile(m, i * 64, 64 * 7, CW, -CW/2, -CW/2);
+        crosshairs[i] = new Tile(m, i * 64, 64 * 7, 64, -CW/2, -CW/2);
+        crosshairs[i].scale_x = 1;
+        crosshairs[i].scale_y = 1;
     }
     player_tile = new Tile(m, 0, 64 * 5, 2 * CW, -CW / 2, -CW - CW/8);
     gun_tile = new Tile(m, 0, CW, CW, 0, -3);
@@ -411,7 +413,6 @@ function mousemoveHandler(e) {
 function mousedownHandler(e) {
     if (e.button == 0) {
         left_mousedown = true;
-        crosshair_frame = 1;
     }
     if (e.button == 2) {
         right_mousedown = true;
@@ -421,7 +422,6 @@ function mousedownHandler(e) {
 function mouseupHandler(e) {
     if (e.button == 0) {
         left_mousedown = false;
-        crosshair_frame = 0;
     }
     if (e.button == 2) {
         right_mousedown = false;
@@ -452,7 +452,6 @@ function drawTileWithTransform(ctx, tile, x, y) {
     
     ctx.save();
     ctx.translate(x_pos_on_view,y_pos_on_view); 
-    console.log(tile.rotation);
     ctx.rotate(-tile.rotation);
     ctx.scale(tile.scale_x, tile.scale_y);
     ctx.translate(-x_pos_on_view,-y_pos_on_view)
@@ -464,17 +463,48 @@ function drawTileWithTransform(ctx, tile, x, y) {
 }
 
 function drawCrosshair(ctx, tile, x, y) {
+    x = Math.floor(x);
+    y = Math.floor(y);
     ctx.save();
     ctx.translate(x,y); 
-    console.log(tile.rotation);
     ctx.rotate(-tile.rotation);
     ctx.scale(tile.scale_x, tile.scale_y);
     ctx.translate(-x,-y)
     
     ctx.drawImage(tile.image, 
         tile.src_x, tile.src_y, tile.size, tile.size, 
-        Math.round(x + tile.x_off), Math.round(y + tile.y_off), tile.size, tile.size); //changes to pixels
+        (x + tile.x_off), (y + tile.y_off), tile.size, tile.size); //changes to pixels
     ctx.restore();
+}
+
+function screenShake(m, t) {
+    t = Math.floor(t / 10);
+    randShake(m);
+    for (let i = 0; i < t - 1; i++) {
+        setTimeout(randShake, 10, m / i);
+    }
+    setTimeout(resetShake, t * 10)
+}
+
+function randShake(m) {
+    screen_shake_x = Math.random() * m - m / 2;
+    screen_shake_y = Math.random() * m - m / 2;
+}
+
+function resetShake() {
+    screen_shake_x = 0;
+    screen_shake_y = 0;
+}
+
+function gunShake(dx, dy, m) {
+    let l = (dx **2 + dy **2)**0.5;
+    screen_shake_x = dx / l * m + Math.random() / 20 - 0.025;
+    screen_shake_y = dy / l * m + Math.random() / 20 - 0.025;
+
+}
+
+function CrosshairTileReset() {
+    crosshair_frame = 0;
 }
 
 function movePlayer(interval) {
@@ -534,26 +564,30 @@ function newBullet() {
 
 function spawnEnemy() {
     
-    let rand_x = Math.floor(Math.random() * WORLD_WIDTH);
-    let rand_y = Math.floor(Math.random() * WORLD_HEIGHT);
-    while (world.get(rand_x, rand_y) == 2) {
-        rand_x = Math.floor(Math.random() * WORLD_WIDTH);
-        rand_y = Math.floor(Math.random() * WORLD_HEIGHT);
+    let rand_x = Math.random() * WORLD_WIDTH;
+    let rand_y = Math.random() * WORLD_HEIGHT;
+    while (!world.is_passable(rand_x, rand_y, ENEMY_HITBOX_SIZE) ||
+           (rand_x < player.x + 3 &&
+           rand_x > player.x - 3) &&
+           (rand_y < player.y + 3 &&
+           rand_y > player.y - 3)) {
+            rand_x = Math.random() * WORLD_WIDTH;
+            rand_y = Math.random() * WORLD_HEIGHT;
     }
 
-    enemies.push(new Enemy(rand_x + 1/2, rand_y + 1/2, player.x - rand_x, player.y - rand_y, ENEMY_SPEED));
+    enemies.push(new Enemy(rand_x, rand_y, player.x - rand_x, player.y - rand_y, ENEMY_SPEED));
 }
 
 function updateWorld(now, interval) {
 
     movePlayer(interval);
-    if (key_f) {
-        view_center_x = player.x + mouse_x/CW/2;
-        view_center_y = player.y + mouse_y/CW/2;
-    } else {
-        view_center_x = player.x;
-        view_center_y = player.y;
-    }
+
+    view_center_x = player.x + mouse_x/CW/2 + screen_shake_x;
+    view_center_y = player.y + mouse_y/CW/2 + screen_shake_y;
+    
+    //if (key_f) {
+    //} else {
+    //}
 
     gun_tile.rotation = (Math.atan(-mouse_y/mouse_x)); //finds the angle of mouse from middle
 
@@ -571,19 +605,17 @@ function updateWorld(now, interval) {
         bullet_interval = 500;
     } else if (gun == 2) {
         bullets_per_shot = 1;
-        bullet_interval = 50;
+        bullet_interval = 30;
     }
 
     if (left_mousedown) {
-        for (let i = 0; i < crosshairs.length; i++) {
-            if (crosshairs[i].rotation < 2 * Math.PI) {
-                crosshairs[i].rotation += Math.PI / 12;
-            } else {
-                crosshairs[i].rotation = 0;
-            }
-        }
-        
         if (now - last_bullet_time > bullet_interval) {
+            crosshair_frame = 1;
+            console.log(performance.now());
+            setTimeout(CrosshairTileReset, bullet_interval / 2);
+            gunShake(mouse_x, mouse_y, PLAYER_BULLET_SPEED / 50);
+            //screenShake(0.3, 20);
+            setTimeout(resetShake, 20);
             for (let i = bullets_per_shot; i > 0; i--) {
                 newBullet();
             }
@@ -746,6 +778,7 @@ function drawWorld() {
         ctx.fillText(`Bullet hitboxes drawn: ${bullet_hitboxes_drawn}`, 20, 260);     
         ctx.fillText(`Total bullets: ${bullets.length}`, 20, 280);     
         ctx.fillText(`Enemies drawn: ${enemies_drawn}`, 20, 300);
+        ctx.fillText(`Screen shake x, y: ${screen_shake_x}, ${screen_shake_y}`, 20, 400);
     }
 
     drawCrosshair(ctx, crosshairs[crosshair_frame], real_mouse_x, real_mouse_y);
