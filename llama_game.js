@@ -3,6 +3,7 @@
 //To do:
 //optimize hitboxes
 //add rolling/dashing
+//add recoil
 //set up map editor
 
 const CW = 64;//Cell width
@@ -10,13 +11,13 @@ const WORLD_HEIGHT = 22; //In cells
 const WORLD_WIDTH = 22;
 const WORLD_CENTER_X = WORLD_WIDTH/2; //In cells
 const WORLD_CENTER_Y = WORLD_HEIGHT/2;
-const PLAYER_HITBOX_SIZE = 0.75;
+const PLAYER_HITBOX_SIZE = 1;
 const BULLET_HITBOX_SIZE = 0.1;
 const ENEMY_HITBOX_SIZE = 1.5;
-const SPEED = 1;
+const SPEED = 2;
 const ENEMY_SPEED = 0.1;
 const ENEMY_INTERVAL = 1000;
-const PLAYER_BULLET_SPEED = 6;
+const PLAYER_BULLET_SPEED = 12;
 
 let bullet_interval = 100;
 let bullets_per_shot = 1;
@@ -169,16 +170,6 @@ class World {
             this.d[y].fill(0);
         }
     }
-    calculateObstacles() {
-        for (let y = 0; y < this.width; y++) {
-            for (let x = 0; x < this.height; x++) {
-                let thisTile = this.d[y][x];
-                if (thisTile == 2) {
-                    this.obstacles.push(new Box(x+0.5, y+0.5, 1, 1));
-                }
-            }
-        }
-    }
     get(x, y) {
         if (x >= 0 && x < this.width &&
             y >= 0 && y < this.height) {
@@ -194,8 +185,14 @@ class World {
           this.d[y][x] = tile;
     }
     is_passable(x, y, r) {
-        let b = new Box(x, y, r, r);
-        return this.obstacles.find(x => x.intersects(b)) == undefined;
+        return world.get(Math.floor(x + r/2), Math.floor(y + r/2)) != 2 &&
+               world.get(Math.floor(x - r/2), Math.floor(y + r/2)) != 2 &&
+               world.get(Math.floor(x + r/2), Math.floor(y - r/2)) != 2 &&
+               world.get(Math.floor(x - r/2), Math.floor(y - r/2)) != 2 &&
+               world.get(Math.floor(x + r/2), Math.floor(y)) != 2 &&
+               world.get(Math.floor(x - r/2), Math.floor(y)) != 2 &&
+               world.get(Math.floor(x), Math.floor(y + r/2)) != 2 &&
+               world.get(Math.floor(x), Math.floor(y - r/2)) != 2;
     }
 }
 
@@ -217,12 +214,13 @@ class Bullet {
         this.y = y + this.dy;
         this.alive = true;
     }
+
     update(interval) {
         let dx = this.dx * this.speed / interval;
         let dy = this.dy * this.speed / interval;
         let new_x = this.x + dx;
         let new_y = this.y + dy;
-        
+
         if (world.is_passable(new_x, new_y, BULLET_HITBOX_SIZE)) {
             this.x = new_x;
             this.y = new_y;
@@ -314,8 +312,6 @@ function gameSetUp() {
     setUpTiles(); //makes images
     world = new World(WORLD_WIDTH,WORLD_HEIGHT);
     createMap(world, world.width, world.height);
-
-    world.calculateObstacles();
 
     player = new Player(WORLD_CENTER_X,WORLD_CENTER_Y,PLAYER_HITBOX_SIZE);
 
@@ -498,8 +494,8 @@ function resetShake() {
 
 function gunShake(dx, dy, m) {
     let l = (dx **2 + dy **2)**0.5;
-    screen_shake_x = dx / l * m + Math.random() / 20 - 0.025;
-    screen_shake_y = dy / l * m + Math.random() / 20 - 0.025;
+    screen_shake_x = dx / l * m + Math.random() / 10 - 0.05;
+    screen_shake_y = dy / l * m + Math.random() / 20 - 0.05;
 
 }
 
@@ -641,7 +637,7 @@ function drawWorld() {
     let obstacle_hitboxes_drawn = 0;
     let bullet_hitboxes_drawn = 0;
 
-    let cell_x = Math.floor(view_center_x - view_cell_width/2); //Finds out which cell should be drawn in top left corner of the view (in cells)
+    let cell_x = Math.floor(view_center_x - view_cell_width/2); 
     let cell_y = Math.floor(view_center_y - view_cell_height/2);
 
     let ctx = canvas.getContext("2d");
@@ -655,6 +651,22 @@ function drawWorld() {
             if (game_mode == 0 || game_mode == 1) {
                 drawTileWithTransform(ctx, tiles[t], x + cell_x, y + cell_y); 
                 cells_drawn = cells_drawn + 1;
+            }
+            //Draws hitboxes for obstacles
+            if (game_mode == 1 || game_mode == 2) {
+                if (t == 2) {
+                    ctx.save();
+                    ctx.strokeStyle = "blue";
+                    ctx.beginPath();
+                    ctx.moveTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y));
+                    ctx.lineTo(worldToScreenX(x + cell_x + 1), worldToScreenY(y + cell_y));
+                    ctx.lineTo(worldToScreenX(x + cell_x + 1), worldToScreenY(y + cell_y + 1));
+                    ctx.lineTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y + 1));
+                    ctx.lineTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y));
+                    ctx.stroke();
+                    ctx.restore();
+                    obstacle_hitboxes_drawn++;
+                }
             }
             if (game_mode == 1) {
                 ctx.fillStyle = "white";
@@ -695,24 +707,6 @@ function drawWorld() {
         ctx.lineTo(real_mouse_x, real_mouse_y);
         ctx.stroke();
         ctx.restore();
-    
-        //draws hitboxes for obstacles
-        for (let i = 0; i < world.obstacles.length; i++) {
-            if (inView(world.obstacles[i].x, world.obstacles[i].y, world.obstacles[i].rx, world.obstacles[i].ry)) {
-                ctx.save();
-                ctx.strokeStyle = "blue";
-                ctx.beginPath();
-                ctx.moveTo(worldToScreenX(world.obstacles[i].x - world.obstacles[i].rx), worldToScreenY(world.obstacles[i].y - world.obstacles[i].ry));
-                ctx.lineTo(worldToScreenX(world.obstacles[i].x + world.obstacles[i].rx), worldToScreenY(world.obstacles[i].y - world.obstacles[i].ry));
-                ctx.lineTo(worldToScreenX(world.obstacles[i].x + world.obstacles[i].rx), worldToScreenY(world.obstacles[i].y + world.obstacles[i].ry));
-                ctx.lineTo(worldToScreenX(world.obstacles[i].x - world.obstacles[i].rx), worldToScreenY(world.obstacles[i].y + world.obstacles[i].ry));
-                ctx.lineTo(worldToScreenX(world.obstacles[i].x - world.obstacles[i].rx), worldToScreenY(world.obstacles[i].y - world.obstacles[i].ry));
-                ctx.stroke();
-                ctx.restore();
-                obstacle_hitboxes_drawn = obstacle_hitboxes_drawn + 1
-            }
-        }
-
         
         //draws hitboxes for bullets
         for (let i = 0; i < bullets.length; i++) {
