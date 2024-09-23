@@ -1,7 +1,7 @@
 "use strict";
 
 //To do:
-//optimize hitboxes
+//fix lagging
 //add rolling/dashing
 //add recoil
 //set up map editor
@@ -14,7 +14,7 @@ const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 const PLAYER_HITBOX_SIZE = 1;
 const BULLET_HITBOX_SIZE = 0.1;
 const ENEMY_HITBOX_SIZE = 1.5;
-const SPEED = 2;
+const SPEED = 1;
 const ENEMY_SPEED = 0.1;
 const ENEMY_INTERVAL = 1000;
 const PLAYER_BULLET_SPEED = 12;
@@ -29,7 +29,7 @@ let enemies = [];
 
 let wall_tile; 
 let empty_tile;
-let player_tile;
+let player_tiles;
 let gun_tile;
 let bullet_tile;
 let enemy_tile;
@@ -37,6 +37,8 @@ let tiles;
 let crosshairs;
 
 let crosshair_frame = 0;
+let player_tile_current = 2;
+let gun_behind = false;
 
 let key_w = false;
 let key_a = false;
@@ -210,8 +212,8 @@ class Bullet {
             this.dy = dy/l + Math.random()/10 - 0.05;
         }
         this.speed = speed;
-        this.x = x + this.dx;
-        this.y = y + this.dy;
+        this.x = x + this.dx / PLAYER_BULLET_SPEED;
+        this.y = y + this.dy / PLAYER_BULLET_SPEED;
         this.alive = true;
     }
 
@@ -327,18 +329,19 @@ function setUpTiles() {
     let m = getImage("combined_art.png");
     tiles = [];
     for (let i = 0; i < 15; i++) {
-        tiles[i] = new Tile(m, i * 64, 0, CW, 0, 0);
+        tiles[i] = new Tile(m, i * 64, 0, 64, 0, 0);
     }
     crosshairs = [];
     for (let i = 0; i < 2; i++) {
-        crosshairs[i] = new Tile(m, i * 64, 64 * 7, 64, -CW/2, -CW/2);
-        crosshairs[i].scale_x = 1;
-        crosshairs[i].scale_y = 1;
+        crosshairs[i] = new Tile(m, i * 64, 64 * 7, 64, -64/2, -64/2);
     }
-    player_tile = new Tile(m, 0, 64 * 5, 2 * CW, -CW / 2, -CW - CW/8);
-    gun_tile = new Tile(m, 0, CW, CW, 0, -3);
-    bullet_tile = new Tile(m, CW * 2, CW, CW, -7, -7);
-    enemy_tile = new Tile(m, 0, 64 * 3, 2 * CW, -CW/2, -CW);
+    player_tiles = [];
+    for (let i = 0; i < 4; i++) {
+        player_tiles[i] = new Tile(m, i * 64, 64 * 2, 64, -64 / 2, -64 / 2);
+    }
+    gun_tile = new Tile(m, 0, 68, 32, 0, 0);
+    bullet_tile = new Tile(m, 64 * 2, 64, 64, -7, -7);
+    enemy_tile = new Tile(m, 0, 64 * 3, 2 * 64, -64/2, -64);
 }
 
 function resize() {
@@ -461,16 +464,9 @@ function drawTileWithTransform(ctx, tile, x, y) {
 function drawCrosshair(ctx, tile, x, y) {
     x = Math.floor(x);
     y = Math.floor(y);
-    ctx.save();
-    ctx.translate(x,y); 
-    ctx.rotate(-tile.rotation);
-    ctx.scale(tile.scale_x, tile.scale_y);
-    ctx.translate(-x,-y)
-    
     ctx.drawImage(tile.image, 
         tile.src_x, tile.src_y, tile.size, tile.size, 
         (x + tile.x_off), (y + tile.y_off), tile.size, tile.size); //changes to pixels
-    ctx.restore();
 }
 
 function screenShake(m, t) {
@@ -494,7 +490,7 @@ function resetShake() {
 
 function gunShake(dx, dy, m) {
     let l = (dx **2 + dy **2)**0.5;
-    screen_shake_x = dx / l * m + Math.random() / 10 - 0.05;
+    screen_shake_x = dx / l * m + Math.random() / 20 - 0.05;
     screen_shake_y = dy / l * m + Math.random() / 20 - 0.05;
 
 }
@@ -524,7 +520,6 @@ function movePlayer(interval) {
             doneMoving = true;
             }
         }
-        player_tile.scale_x = -1;
     }
     if (key_d && !key_a && !doneMoving) {
         if (key_w && !doneMoving) {
@@ -541,7 +536,6 @@ function movePlayer(interval) {
             doneMoving = true;
             }
         }
-        player_tile.scale_x = 1;
     }
     if (key_w && !key_s && !doneMoving) {
         player.tryMove(0,-MS);
@@ -585,14 +579,43 @@ function updateWorld(now, interval) {
     //} else {
     //}
 
-    gun_tile.rotation = (Math.atan(-mouse_y/mouse_x)); //finds the angle of mouse from middle
+    //calculating how player and gun should be drawn
+    let mouse_rotation = Math.atan(-mouse_y/mouse_x)
+    gun_tile.rotation = mouse_rotation; //finds the angle of mouse from middle
 
     if (mouse_x >= 0) {
         gun_tile.scale_x = 1;
     } else {
         gun_tile.scale_x = -1;
     }
+
+    if (mouse_rotation > Math.PI / 4) {
+        if (mouse_x >= 0) {
+            player_tile_current = 3;
+            gun_behind = true;
+        } else {
+            player_tile_current = 2;
+            gun_behind = false;
+        }
+    } else if (mouse_rotation >= -Math.PI / 4 && mouse_rotation <= Math.PI / 4) {
+        if (mouse_x >= 0) {
+            player_tile_current = 1;
+            gun_behind = false;
+        } else {
+            player_tile_current = 0;
+            gun_behind = false;
+        }
+    } else {
+        if (mouse_x >= 0) {
+            player_tile_current = 2;
+            gun_behind = false;
+        } else {
+            player_tile_current = 3;
+            gun_behind = true;
+        }
+    }
     
+    //gun stuff
     if (gun == 0) {
         bullets_per_shot = 1;
         bullet_interval = 100;
@@ -607,9 +630,8 @@ function updateWorld(now, interval) {
     if (left_mousedown) {
         if (now - last_bullet_time > bullet_interval) {
             crosshair_frame = 1;
-            console.log(performance.now());
             setTimeout(CrosshairTileReset, bullet_interval / 2);
-            gunShake(mouse_x, mouse_y, PLAYER_BULLET_SPEED / 50);
+            gunShake(mouse_x, mouse_y, 0.05);
             //screenShake(0.3, 20);
             setTimeout(resetShake, 20);
             for (let i = bullets_per_shot; i > 0; i--) {
@@ -677,9 +699,13 @@ function drawWorld() {
 
     //Draws the tiles
     if (game_mode == 0 || game_mode == 1) {
-        drawTileWithTransform(ctx, player_tile, player.x, player.y);
-        drawTileWithTransform(ctx, gun_tile, player.x, player.y);
-
+        if (!gun_behind) {
+            drawTileWithTransform(ctx, player_tiles[player_tile_current], player.x, player.y);
+            drawTileWithTransform(ctx, gun_tile, player.x, player.y);
+        } else {
+            drawTileWithTransform(ctx, gun_tile, player.x, player.y);
+            drawTileWithTransform(ctx, player_tiles[player_tile_current], player.x, player.y);
+        }
 
         for (let i = 0; i < bullets.length; i++) {
             if (inView(bullets[i].x, bullets[i].y, bullet_tile.size/2/CW, bullet_tile.size/2/CW)) {
