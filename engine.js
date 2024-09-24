@@ -47,7 +47,7 @@ function resizeGame() {
 
 function getImage(name) {
     let image = new Image();
-    image.onload = function() { console.log(`Loaded ${name}`); }
+    //image.onload = function() { console.log(`Loaded ${name}`); }
     image.src = name;
     return image;
 }

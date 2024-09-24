@@ -1,7 +1,7 @@
 "use strict";
 
 //To do:
-//fix lagging
+//add different pngs
 //add rolling/dashing
 //add recoil
 //set up map editor
@@ -14,7 +14,7 @@ const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 const PLAYER_HITBOX_SIZE = 1;
 const BULLET_HITBOX_SIZE = 0.1;
 const ENEMY_HITBOX_SIZE = 1.5;
-const SPEED = 1;
+const SPEED = 2;
 const ENEMY_SPEED = 0.1;
 const ENEMY_INTERVAL = 1000;
 const PLAYER_BULLET_SPEED = 12;
@@ -44,9 +44,14 @@ let key_w = false;
 let key_a = false;
 let key_s = false;
 let key_d = false;
-let key_f = true;
+let key_f = false;
 let key_x = false;
 let key_q = false;
+let key_p = false;
+let key_dash = false;
+let key_equals = false;
+let key_1 = false;
+let key_2 = false;
 let mouse_x = 0;
 let mouse_y = 0;
 let real_mouse_x = 0;
@@ -69,84 +74,12 @@ let view_cell_height;
 let screen_shake_x = 0;
 let screen_shake_y = 0;
 
+let show_hitboxes = false;
+let show_tiles = true;
 let game_mode = 2;
 let gun = 0;
 
-//Map stuff
-let test_map = [
-    [3].concat(new Array(7).fill(13)).concat([4]).concat((2)),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [11].concat(new Array(7).fill(1)).concat([12]).concat([2]),
-    [5].concat(new Array(7).fill(14)).concat([6]).concat((2)),
-    new Array(10).fill(2)
-];
-
-let test_map2 = [
-    new Array(22).fill(2),
-    [2].concat(3).concat(new Array(18).fill(13)).concat(4).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(11).concat(new Array(18).fill(1)).concat(12).concat(2),
-    [2].concat(5).concat(new Array(18).fill(14)).concat(6).concat(2),
-    new Array(22).fill(2)
-]
-
-function randMap(world, w, h) {
-    for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-            world.d[y][x] = Math.floor(Math.random()*14);
-        }
-    }
-}
-
-function createMap(world, w, h) {
-    let tmh = test_map2.length;
-    let tmw = test_map2[0].length;
-    for (var y = 0; y < h; y++) {
-        for (var x = 0; x < w; x++) {
-            let r = test_map2[y % tmh];
-            r = r.concat(new Array(tmw).fill(0));
-            world.d[y][x] = r[x % tmw];
-        }
-    }
-}
-
-function changeMap(map, x, y) {
-    map[y][x] = 2;
-    map[y][x+1] = 11;
-    map[y+1][x] = 13;
-    map[y][x-1] = 12;
-    map[y-1][x] = 14;
-    map[y-1][x-1] = 7;
-    map[y-1][x+1] = 8;
-    map[y+1][x-1] = 9;
-    map[y+1][x+1] = 10;
-}
-
-changeMap(test_map2, 6, 4);
-changeMap(test_map2, 9, 7);
-changeMap(test_map2, 13, 4);
-changeMap(test_map2, 17, 15); 
+let map_editor = false;
 
 class Box {
     constructor(x, y, width, height) {
@@ -288,7 +221,6 @@ class Enemy {
         for (let i = 0; i < bullets.length; i ++) {
             let b2 = new Box(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE, BULLET_HITBOX_SIZE);
             if (b.intersects(b2)) {
-                console.log("hit");
                 return true;
             }
         }
@@ -322,7 +254,15 @@ function gameSetUp() {
     document.body.addEventListener("mousemove", mousemoveHandler)
     document.body.addEventListener("mousedown", mousedownHandler);
     document.body.addEventListener("mouseup", mouseupHandler);
+}
 
+//this is called by engine.js
+function updateWorld(now, interval) {
+    if (!map_editor) {
+        updateGameWorld(now,interval);
+    } else {
+        updateMapEditor(now, interval);
+    }
 }
 
 function setUpTiles() {
@@ -361,24 +301,22 @@ function keydownHandler(e) {
         key_s = true;
     } else if (e.key == "d") {
         key_d = true;
-    } else if (e.key == "f" && !key_f) {
+    } else if (e.key == "f") {
         key_f = true;
-    } else if (e.key == "f" && key_f) {
-        key_f = false;
-    } else if (e.key == "x" && !key_x) {
+    } else if (e.key == "x") {
         key_x = true;
-        if (game_mode < 2) {
-            game_mode = game_mode + 1;
-        } else {
-            game_mode = 0;
-        }
-    } else if (e.key == "q" && !key_q) {
+    } else if (e.key == "q") {
         key_q = true;
-        if (gun < 2) {
-            gun++;
-        } else {
-            gun = 0;
-        }
+    } else if (e.key == "p") {
+        key_p = true;
+    } else if (e.key == "-") {
+        key_dash = true;
+    } else if (e.key == "=") {
+        key_equals = true;
+    } else if (e.key == "1") {
+        key_1 = true;
+    } else if (e.key == "2") {
+        key_2 = true;
     } else {
         return true;
     }
@@ -393,10 +331,22 @@ function keyupHandler(e) {
         key_s = false;
     } else if (e.key == "d") {
         key_d = false;
+    } else if (e.key == "f") {
+        key_f = false;
     } else if (e.key == "x") {
         key_x = false;
     } else if (e.key == "q") {
         key_q = false;
+    } else if (e.key == "p") {
+        key_p = false;
+    } else if (e.key == "-") {
+        key_dash = false;
+    } else if (e.key == "=") {
+        key_equals = false;
+    } else if (e.key == "1") {
+        key_1 = false;
+    } else if (e.key == "2") {
+        key_2 = false;
     } else {
         return true;
     }
@@ -568,16 +518,36 @@ function spawnEnemy() {
     enemies.push(new Enemy(rand_x, rand_y, player.x - rand_x, player.y - rand_y, ENEMY_SPEED));
 }
 
-function updateWorld(now, interval) {
+function updateGameWorld(now, interval) {
+
+    //checks for map editor
+    if (key_f) {
+        map_editor = true;
+        key_f = false;
+    }
 
     movePlayer(interval);
 
     view_center_x = player.x + mouse_x/CW/2 + screen_shake_x;
     view_center_y = player.y + mouse_y/CW/2 + screen_shake_y;
-    
-    //if (key_f) {
-    //} else {
-    //}
+
+    if (key_1) {
+        show_hitboxes = !show_hitboxes;
+        key_1 = false;
+    }
+    if (key_2) {
+        show_tiles = !show_tiles;
+        key_2 = false;
+    }
+
+    if (key_q) {
+        if (gun < 2) {
+            gun++;
+        } else {
+            gun = 0;
+        }
+        key_q = false;
+    }
 
     //calculating how player and gun should be drawn
     let mouse_rotation = Math.atan(-mouse_y/mouse_x)
@@ -632,7 +602,6 @@ function updateWorld(now, interval) {
             crosshair_frame = 1;
             setTimeout(CrosshairTileReset, bullet_interval / 2);
             gunShake(mouse_x, mouse_y, 0.05);
-            //screenShake(0.3, 20);
             setTimeout(resetShake, 20);
             for (let i = bullets_per_shot; i > 0; i--) {
                 newBullet();
@@ -649,10 +618,10 @@ function updateWorld(now, interval) {
     bullets.map(b => b.update(interval));
     enemies.map(b => b.update(interval));
     
-    drawWorld();
+    drawGameWorld();
     
 }
-function drawWorld() {
+function drawGameWorld() {
     let cells_drawn = 0;
     let bullets_drawn = 0;
     let enemies_drawn = 0;
@@ -670,12 +639,12 @@ function drawWorld() {
     for (let y = 0; y < view_cell_height + 1; y++) {
         for (let x = 0; x < view_cell_width + 1; x++) {
             let t = world.get(x + cell_x, y + cell_y);
-            if (game_mode == 0 || game_mode == 1) {
+            if (show_tiles) {
                 drawTileWithTransform(ctx, tiles[t], x + cell_x, y + cell_y); 
                 cells_drawn = cells_drawn + 1;
             }
             //Draws hitboxes for obstacles
-            if (game_mode == 1 || game_mode == 2) {
+            if (show_hitboxes) {
                 if (t == 2) {
                     ctx.save();
                     ctx.strokeStyle = "blue";
@@ -690,7 +659,7 @@ function drawWorld() {
                     obstacle_hitboxes_drawn++;
                 }
             }
-            if (game_mode == 1) {
+            if (show_hitboxes) {
                 ctx.fillStyle = "white";
                 ctx.fillText(t, worldToScreenX(x + cell_x), worldToScreenY(y + cell_y + 0.1));  
             }
@@ -698,7 +667,7 @@ function drawWorld() {
     }
 
     //Draws the tiles
-    if (game_mode == 0 || game_mode == 1) {
+    if (show_tiles) {
         if (!gun_behind) {
             drawTileWithTransform(ctx, player_tiles[player_tile_current], player.x, player.y);
             drawTileWithTransform(ctx, gun_tile, player.x, player.y);
@@ -723,7 +692,7 @@ function drawWorld() {
     }
     
     //Draws the hitboxes
-    if (game_mode == 1 || game_mode == 2) {
+    if (show_hitboxes) {
 
         //draws the aim line
         ctx.save();
@@ -784,14 +753,14 @@ function drawWorld() {
         last_player_x = player.x;
         last_player_y = player.y;
 
+        //debug info
         ctx.fillStyle = "orange";
         ctx.fillText(`Frame: ${frame}`, 20, 20);
         ctx.fillText(`position x, y: ${player.x}, ${player.y}`, 20, 40);
         ctx.fillText(`View x, y: ${Math.round(view_center_x)}, ${Math.round(view_center_y)}`, 20, 60);
         ctx.fillText(`Mouse x, y: ${mouse_x}, ${mouse_y}`, 20, 80);
         ctx.fillText(`Speed: ${real_speed}`, 20,100);
-        ctx.fillText(`Mode: ${game_mode}`, 20,120);
-        ctx.fillText(`Gun: ${gun}`, 20,140);
+        ctx.fillText(`Gun: ${gun}`, 20,120);
         ctx.fillText(`Cells drawn: ${cells_drawn}`, 20, 200);
         ctx.fillText(`Bullets drawn: ${bullets_drawn}`, 20, 220); 
         ctx.fillText(`Obstacle hitboxes drawn: ${obstacle_hitboxes_drawn}`, 20, 240);     
@@ -804,10 +773,10 @@ function drawWorld() {
     drawCrosshair(ctx, crosshairs[crosshair_frame], real_mouse_x, real_mouse_y);
 
 
-    updateWorldPost();
+    updateGameWorldPost();
 }
 
-function updateWorldPost() {
+function updateGameWorldPost() {
     bullets = bullets.filter(x => x.alive == true);
     enemies = enemies.filter(x => x.alive == true);
 }
