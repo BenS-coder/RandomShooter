@@ -26,7 +26,7 @@ function startGame(object) {
     canvas.tabIndex = 1; //Focuses the keyboard on the canvas
     canvas.focus();
 
-    body.style.cursor = "none";
+
 
     //Game set up stuff
     gameObject = object; //This is needed so that you can refer to the "object" parameter of this function when not inside this function.

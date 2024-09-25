@@ -1,8 +1,10 @@
 "use strict";
 
 //To do:
-//add different pngs
+//fix player hitbox
+//fix bullet hitboxes and add afterimages
 //add rolling/dashing
+//update enemies
 //add recoil
 //set up map editor
 
@@ -52,6 +54,7 @@ let key_dash = false;
 let key_equals = false;
 let key_1 = false;
 let key_2 = false;
+let key_3 = false;
 let mouse_x = 0;
 let mouse_y = 0;
 let real_mouse_x = 0;
@@ -76,6 +79,7 @@ let screen_shake_y = 0;
 
 let show_hitboxes = false;
 let show_tiles = true;
+let show_debug = true;
 let game_mode = 2;
 let gun = 0;
 
@@ -266,28 +270,37 @@ function updateWorld(now, interval) {
 }
 
 function setUpTiles() {
-    let m = getImage("combined_art.png");
+    let background_images = getImage("background_tiles.png");
+    let player_images = getImage("bear_tiles.png");
+    let character_images = getImage("character_tiles.png");
+    let bullet_images = getImage("bullet_tiles.png");
+    let gun_images = getImage("gun_tiles.png");
+    let crosshair_images = getImage("crosshair_tiles.png");
+
     tiles = [];
     for (let i = 0; i < 15; i++) {
-        tiles[i] = new Tile(m, i * 64, 0, 64, 0, 0);
+        tiles[i] = new Tile(background_images, i * 64, 0, 64, 0, 0);
     }
     crosshairs = [];
-    for (let i = 0; i < 2; i++) {
-        crosshairs[i] = new Tile(m, i * 64, 64 * 7, 64, -64/2, -64/2);
+    for (let i = 0; i < 3; i++) {
+        crosshairs[i] = new Tile(crosshair_images, i * 64, 0, 64, -64/2, -64/2);
     }
     player_tiles = [];
     for (let i = 0; i < 4; i++) {
-        player_tiles[i] = new Tile(m, i * 64, 64 * 2, 64, -64 / 2, -64 / 2);
+        player_tiles[i] = new Tile(player_images, i * 64, 0, 64, -64 / 2, -64 / 2);
     }
-    gun_tile = new Tile(m, 0, 68, 32, 0, 0);
-    bullet_tile = new Tile(m, 64 * 2, 64, 64, -7, -7);
-    enemy_tile = new Tile(m, 0, 64 * 3, 2 * 64, -64/2, -64);
+
+    gun_tile = new Tile(gun_images, 0, 4, 32, 0, 0);
+    bullet_tile = new Tile(bullet_images, 0, 0, 64, -7, -7);
+    enemy_tile = new Tile(character_images, 64, 0, 128, -64/2, -64);
 }
 
 function resize() {
-    view_width = canvas.width;
-    view_width = view_width & ~1;
+    view_width = canvas.width & ~1;
+    view_width = view_width;
     view_height = canvas.height & ~1;
+    map_editor_view_width = view_width;
+    map_editor_view_height = view_height;
     view_cell_width = view_width/CW; 
     view_cell_height = view_height/CW;
 }
@@ -317,6 +330,8 @@ function keydownHandler(e) {
         key_1 = true;
     } else if (e.key == "2") {
         key_2 = true;
+    } else if (e.key == "3") {
+        key_3 = true;
     } else {
         return true;
     }
@@ -347,6 +362,8 @@ function keyupHandler(e) {
         key_1 = false;
     } else if (e.key == "2") {
         key_2 = false;
+    } else if (e.key == "3") {
+        key_3 = false;
     } else {
         return true;
     }
@@ -383,6 +400,14 @@ function worldToScreenX(x) {
 
 function worldToScreenY(y) {
     return Math.floor((y-view_center_y)*CW + view_height/2);
+}
+
+function screenToWorldX(x) {
+
+}
+
+function screenToWorldY(y) {
+    
 }
 
 //Checks if something is in the view(all parameters are in cell units)
@@ -539,7 +564,10 @@ function updateGameWorld(now, interval) {
         show_tiles = !show_tiles;
         key_2 = false;
     }
-
+    if (key_3) {
+        show_debug = !show_debug;
+        key_3 = false;
+    }
     if (key_q) {
         if (gun < 2) {
             gun++;
@@ -646,7 +674,6 @@ function drawGameWorld() {
             //Draws hitboxes for obstacles
             if (show_hitboxes) {
                 if (t == 2) {
-                    ctx.save();
                     ctx.strokeStyle = "blue";
                     ctx.beginPath();
                     ctx.moveTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y));
@@ -655,7 +682,6 @@ function drawGameWorld() {
                     ctx.lineTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y + 1));
                     ctx.lineTo(worldToScreenX(x + cell_x), worldToScreenY(y + cell_y));
                     ctx.stroke();
-                    ctx.restore();
                     obstacle_hitboxes_drawn++;
                 }
             }
@@ -695,18 +721,15 @@ function drawGameWorld() {
     if (show_hitboxes) {
 
         //draws the aim line
-        ctx.save();
         ctx.strokeStyle = "blue";
         ctx.beginPath();
         ctx.moveTo(worldToScreenX(player.x), worldToScreenY(player.y));
         ctx.lineTo(real_mouse_x, real_mouse_y);
         ctx.stroke();
-        ctx.restore();
         
         //draws hitboxes for bullets
         for (let i = 0; i < bullets.length; i++) {
             if (inView(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE/2, BULLET_HITBOX_SIZE/2)) {
-                ctx.save();
                 ctx.strokeStyle = "green";
                 ctx.beginPath();
                 ctx.moveTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y - BULLET_HITBOX_SIZE / 2));
@@ -715,7 +738,6 @@ function drawGameWorld() {
                 ctx.lineTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y + BULLET_HITBOX_SIZE / 2));
                 ctx.lineTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y - BULLET_HITBOX_SIZE / 2));
                 ctx.stroke();
-                ctx.restore();
                 bullet_hitboxes_drawn = bullet_hitboxes_drawn + 1;
             }
         }
@@ -723,7 +745,6 @@ function drawGameWorld() {
         //draws the hitboxes for the enemies
         for (let i = 0; i < enemies.length; i++) {
             if (inView(enemies[i].x, enemies[i].y, ENEMY_HITBOX_SIZE/2, ENEMY_HITBOX_SIZE/2)) {
-                ctx.save();
                 ctx.strokeStyle = "red";
                 ctx.beginPath();
                 ctx.moveTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
@@ -732,12 +753,10 @@ function drawGameWorld() {
                 ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE / 2));
                 ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
                 ctx.stroke();
-                ctx.restore();
             }
         }
 
         //Draws hitbox for player
-        ctx.save();
         ctx.strokeStyle = "purple";
         ctx.beginPath();
         ctx.moveTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2));
@@ -746,13 +765,14 @@ function drawGameWorld() {
         ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE / 2));
         ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2));
         ctx.stroke();
-        ctx.restore();
 
         //Calculates player speed
         real_speed = Math.fround(Math.sqrt(Math.pow(last_player_x - player.x,2) + Math.pow(last_player_y - player.y,2)))*CW;
         last_player_x = player.x;
         last_player_y = player.y;
-
+}
+    
+    if (show_debug) {
         //debug info
         ctx.fillStyle = "orange";
         ctx.fillText(`Frame: ${frame}`, 20, 20);
