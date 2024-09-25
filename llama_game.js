@@ -13,7 +13,7 @@ const WORLD_HEIGHT = 22; //In cells
 const WORLD_WIDTH = 22;
 const WORLD_CENTER_X = WORLD_WIDTH/2; //In cells
 const WORLD_CENTER_Y = WORLD_HEIGHT/2;
-const PLAYER_HITBOX_SIZE = 1;
+const PLAYER_HITBOX_SIZE = 0.75;
 const BULLET_HITBOX_SIZE = 0.1;
 const ENEMY_HITBOX_SIZE = 1.5;
 const SPEED = 2;
@@ -29,8 +29,6 @@ let player;
 let bullets = [];
 let enemies = [];
 
-let wall_tile; 
-let empty_tile;
 let player_tiles;
 let gun_tile;
 let bullet_tile;
@@ -278,7 +276,7 @@ function setUpTiles() {
     let crosshair_images = getImage("crosshair_tiles.png");
 
     tiles = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < number_of_tiles; i++) {
         tiles[i] = new Tile(background_images, i * 64, 0, 64, 0, 0);
     }
     crosshairs = [];
@@ -687,7 +685,7 @@ function drawGameWorld() {
             }
             if (show_hitboxes) {
                 ctx.fillStyle = "white";
-                ctx.fillText(t, worldToScreenX(x + cell_x), worldToScreenY(y + cell_y + 0.1));  
+                //ctx.fillText(t, worldToScreenX(x + cell_x), worldToScreenY(y + cell_y + 0.1));  
             }
         }
     }
