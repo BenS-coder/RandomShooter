@@ -135,8 +135,23 @@ function drawMenu(ctx) {
     ctx.fillRect(map_editor_view_width - map_editor_menu_width, 0, 4, map_editor_view_height);
 
     for (let i = 0; i < number_of_tiles; i++) {
-        ctx.drawImage(tiles[i].image, tiles[i].src_x, tiles[i].src_y, 64, 64, (map_editor_view_width - (map_editor_menu_width - map_editor_border)) + (i % 4) * 64, Math.floor(i/4) * 64, 64, 64);
+        let this_tile_x = (map_editor_view_width - (map_editor_menu_width - map_editor_border)) + (i % 4) * 64;
+        let this_tile_y = Math.floor(i/4) * 64;
+        ctx.drawImage(tiles[i].image, tiles[i].src_x, tiles[i].src_y, 64, 64, this_tile_x, this_tile_y, 64, 64);
         map_menu_tiles[Math.floor(i/4)][i%4] = i;
+        if (i == selected_tile) {
+            ctx.save();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "purple";
+            ctx.beginPath();
+            ctx.moveTo(this_tile_x, this_tile_y);
+            ctx.lineTo(this_tile_x + 64, this_tile_y);
+            ctx.lineTo(this_tile_x + 64, this_tile_y + 64);
+            ctx.lineTo(this_tile_x, this_tile_y + 64);
+            ctx.lineTo(this_tile_x, this_tile_y);
+            ctx.stroke();
+            ctx.restore();
+        }
     }
 }
 
@@ -160,7 +175,6 @@ function draw_crosshair_block(ctx, real_mouse_x, real_mouse_y) {
     } else {
         let mouse_y_in_menu = Math.floor(real_mouse_y / 64) * 64;
         let mouse_x_in_menu = Math.floor((real_mouse_x - (map_editor_view_width - map_editor_menu_width - map_editor_border))/64) * 64 + (map_editor_view_width - map_editor_menu_width + map_editor_border);
-        console.log(mouse_x_in_menu);
         ctx.save();
         ctx.strokeStyle = "blue";
         ctx.beginPath();
@@ -202,8 +216,6 @@ function logMapData() {
     console.log(map);
 }
 
-
-
 function updateMapEditor(now, interval) {
     if (key_f) {
         map_editor = false;
@@ -216,10 +228,11 @@ function updateMapEditor(now, interval) {
         } else {
             let mouse_y_in_menu = Math.floor(real_mouse_y / 64);
             let mouse_x_in_menu = Math.floor((real_mouse_x - (map_editor_view_width - map_editor_menu_width - map_editor_border)) / 64);
-            let this_tile = map_menu_tiles[mouse_y_in_menu][mouse_x_in_menu];
-            if (mouse_y_in_menu <= map_menu_tiles.length && mouse_x_in_menu <= map_menu_tiles[0].length && this_tile != undefined) {
-                selected_tile = this_tile;
-                console.log(selected_tile);
+            if (mouse_y_in_menu < Math.ceil(number_of_tiles / 4)) {
+                let this_tile = map_menu_tiles[mouse_y_in_menu][mouse_x_in_menu];
+                if (mouse_y_in_menu <= map_menu_tiles.length && mouse_x_in_menu <= map_menu_tiles[0].length && this_tile != undefined) {
+                    selected_tile = this_tile;
+                }
             }
         }
     }
@@ -343,11 +356,13 @@ function drawMapEditor() {
     drawMenu(ctx);
 
     //crosshair
+
+    draw_crosshair_block(ctx, real_mouse_x, real_mouse_y);
+
     if (mouseInMapEditor(real_mouse_x, real_mouse_y)) {
         drawCrosshair(ctx, crosshairs[0], real_mouse_x, real_mouse_y);
     } else {
         drawCrosshair(ctx, crosshairs[2], real_mouse_x, real_mouse_y);
     }
-
-    draw_crosshair_block(ctx, real_mouse_x, real_mouse_y);
+    
 }
