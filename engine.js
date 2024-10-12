@@ -37,6 +37,9 @@ function startGame(object) {
     resizeGame();
 
     window.requestAnimationFrame(updateGame);
+    
+    //hide cursor
+    document.body.style.cursor = 'none';
 }
 
 function resizeGame() {

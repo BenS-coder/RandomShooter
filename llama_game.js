@@ -1,12 +1,10 @@
 "use strict";
 
 //To do:
-//fix player hitbox
-//fix bullet hitboxes and add afterimages
 //fix map-editor crash
 //add rolling/dashing
 //update enemies
-//add recoil
+//make bullet hit particles
 
 const CW = 64;//Cell width
 const WORLD_HEIGHT = 22; //In cells
@@ -16,9 +14,9 @@ const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 const PLAYER_HITBOX_SIZE = 0.75;
 const BULLET_HITBOX_SIZE = 0.1;
 const ENEMY_HITBOX_SIZE = 1.5;
-const SPEED = 2;
+const SPEED = 1;
 const ENEMY_SPEED = 0.1;
-const ENEMY_INTERVAL = 1000;
+const ENEMY_INTERVAL = 100000000000000000000000;
 const PLAYER_BULLET_SPEED = 12;
 const NUMBER_OF_GUN_TILES = 4;
 
@@ -83,7 +81,7 @@ let show_hitboxes = false;
 let show_tiles = true;
 let show_debug = true;
 let game_mode = 2;
-let gun = 0;
+let gun_current = 0;
 
 let map_editor = false;
 
@@ -117,7 +115,7 @@ class World {
                 return(this.d[y][x]);
 
         }   
-        return 0;
+        return border_tile;
     }
     set(x, y, tile) {
         if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
@@ -140,36 +138,65 @@ class World {
 class Bullet {
     constructor(x, y, dx, dy, speed) {
         let l = (dx **2 + dy **2)**0.5
-        if (gun == 0) {
-            this.dx = dx/l;
-            this.dy = dy/l;
-        } else if (gun == 1) {
-            this.dx = dx/l + Math.random()/2 - 0.25;
-            this.dy = dy/l + Math.random()/2 - 0.25;
-        } else if (gun == 2) {
-            this.dx = dx/l + Math.random()/10 - 0.05;
-            this.dy = dy/l + Math.random()/10 - 0.05;
+        this.dx = dx/l;
+        this.dy = dy/l;
+        this.x = x + this.dx/2;
+        this.y = y + this.dy/2;
+        if (gun_current == 1) {
+            this.dx += Math.random()/2 - 0.25;
+            this.dy += Math.random()/2 - 0.25;
+        } else if (gun_current == 2) {
+            this.dx += Math.random()/10 - 0.05;
+            this.dy += Math.random()/10 - 0.05;
         }
         this.speed = speed;
-        this.x = x + this.dx / PLAYER_BULLET_SPEED;
-        this.y = y + this.dy / PLAYER_BULLET_SPEED;
         this.alive = true;
+        this.dead_next_update = false;
     }
 
     update(interval) {
+        if (this.dead_next_update) {
+            this.alive = false;
+        }
         let dx = this.dx * this.speed / interval;
         let dy = this.dy * this.speed / interval;
-        let new_x = this.x + dx;
-        let new_y = this.y + dy;
+        
+        let move = true;
+        let max_x = this.x + dx;
+        let max_y = this.y + dy;
 
-        if (world.is_passable(new_x, new_y, BULLET_HITBOX_SIZE)) {
-            this.x = new_x;
-            this.y = new_y;
-        } else {
-            this.alive = false;
+
+        for (let checks = PLAYER_BULLET_SPEED; checks > 0; checks --) {
+            let step = checks/PLAYER_BULLET_SPEED;
+            let check_x = this.x + dx * step;
+            let check_y = this.y + dy * step;
+            if (!world.is_passable(check_x, check_y, BULLET_HITBOX_SIZE)) {
+                max_x = this.x + dx * (checks - 1) / PLAYER_BULLET_SPEED;
+                max_y = this.y + dy * (checks - 1) / PLAYER_BULLET_SPEED;
+                move = false;
+            }
+        }
+
+        this.x = max_x;
+        this.y = max_y;
+        if (!move) {
+            this.dead_next_update = true;
         }
     }
 }
+
+/*
+class gun {
+    constructor(x, y, spread, bullets) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+    }
+    fire() {
+
+    }
+}
+*/
 
 class Player {
     constructor(x, y, size) { //size is in cell units
@@ -218,15 +245,17 @@ class Enemy {
         if (world.is_passable(this.x, new_y, ENEMY_HITBOX_SIZE)) {
             this.y = new_y;
         }
-        if (this.touchBullet()) {
+        if (this.touchBullet(interval)) {
             this.alive = false;
         }
     }
-    touchBullet() {
+    touchBullet(interval) {
         let b = new Box(this.x, this.y, ENEMY_HITBOX_SIZE, ENEMY_HITBOX_SIZE);
         for (let i = 0; i < bullets.length; i ++) {
             let b2 = new Box(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE, BULLET_HITBOX_SIZE);
-            if (b.intersects(b2)) {
+            let b3 = new Box(bullets[i].x - bullets[i].dx * bullets[i].speed / interval, bullets[i].y - bullets[i].dy * bullets[i].speed / interval, BULLET_HITBOX_SIZE, BULLET_HITBOX_SIZE);
+            if (b.intersects(b2) || b.intersects(b3)) {
+                bullets[i].alive = false;
                 return true;
             }
         }
@@ -294,10 +323,10 @@ function setUpTiles() {
 
     gun_tiles = [];
     for (let i = 0; i < NUMBER_OF_GUN_TILES; i++) {
-        gun_tiles[i] = new Tile(gun_images, i * 64, 0, 64, 0, -4);
+        gun_tiles[i] = new Tile(gun_images, i * 64, 0, 64, 0, -6);
     }
 
-    bullet_tile = new Tile(bullet_images, 64 * 2, 0, 64, 1, 1);
+    bullet_tile = new Tile(bullet_images, 64 * 2, 0, 64, -1.5, -1.5);
     enemy_tile = new Tile(character_images, 64, 0, 128, -64/2, -64);
 }
 
@@ -492,7 +521,6 @@ function gunFireAnimation() {
 }
 
 function changeGunAnimation() {
-    console.log(gun_tile_current);
     if (gun_tile_current < NUMBER_OF_GUN_TILES - 1) {
         gun_tile_current++;
     } else {
@@ -599,10 +627,10 @@ function updateGameWorld(now, interval) {
         key_3 = false;
     }
     if (key_q) {
-        if (gun < 2) {
-            gun++;
+        if (gun_current < 2) {
+            gun_current++;
         } else {
-            gun = 0;
+            gun_current = 0;
         }
         key_q = false;
     }
@@ -650,13 +678,13 @@ function updateGameWorld(now, interval) {
     }
     
     //gun stuff
-    if (gun == 0) {
+    if (gun_current == 0) {
         bullets_per_shot = 1;
         bullet_interval = 100;
-    } else if (gun == 1) {
+    } else if (gun_current == 1) {
         bullets_per_shot = 15;
         bullet_interval = 500;
-    } else if (gun == 2) {
+    } else if (gun_current == 2) {
         bullets_per_shot = 1;
         bullet_interval = 30;
     }
@@ -758,12 +786,13 @@ function drawGameWorld() {
     if (show_hitboxes) {
 
         //draws the aim line
-        ctx.strokeStyle = "blue";
-        ctx.beginPath();
-        ctx.moveTo(worldToScreenX(player.x), worldToScreenY(player.y));
-        ctx.lineTo(real_mouse_x, real_mouse_y);
-        ctx.stroke();
-        
+        if (show_debug) {
+            ctx.strokeStyle = "blue";
+            ctx.beginPath();
+            ctx.moveTo(worldToScreenX(player.x), worldToScreenY(player.y));
+            ctx.lineTo(real_mouse_x, real_mouse_y);
+            ctx.stroke();
+        }    
         //draws hitboxes for bullets
         for (let i = 0; i < bullets.length; i++) {
             if (inView(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE/2, BULLET_HITBOX_SIZE/2)) {
@@ -817,7 +846,7 @@ function drawGameWorld() {
         ctx.fillText(`View x, y: ${Math.round(view_center_x)}, ${Math.round(view_center_y)}`, 20, 60);
         ctx.fillText(`Mouse x, y: ${mouse_x}, ${mouse_y}`, 20, 80);
         ctx.fillText(`Speed: ${real_speed}`, 20,100);
-        ctx.fillText(`Gun: ${gun}`, 20,120);
+        ctx.fillText(`Gun: ${gun_current}`, 20,120);
         ctx.fillText(`Cells drawn: ${cells_drawn}`, 20, 200);
         ctx.fillText(`Bullets drawn: ${bullets_drawn}`, 20, 220); 
         ctx.fillText(`Obstacle hitboxes drawn: ${obstacle_hitboxes_drawn}`, 20, 240);     

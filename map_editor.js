@@ -1,6 +1,10 @@
+//Menu
 const map_editor_menu_height = 0;
 const map_editor_border = 4;
 const map_editor_menu_width = 256 + map_editor_border;
+
+//The tile that fills the out of bounds
+const border_tile = 2;
 
 let map_editor_speed = 1;
 let map_editor_view_center_x = 10; //in cells
