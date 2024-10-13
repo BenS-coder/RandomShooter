@@ -1,42 +1,50 @@
 "use strict";
 
 //To do:
-//fix map-editor crash
+
+//add enemy animations
+//add gun class and move player things into player class
 //add rolling/dashing
-//update enemies
-//make bullet hit particles
-//fix game running faster/slower bc of fps
+//add different hitboxes for bullet hits and wall collisions
+
 //fix right click
 //fix screen scale
+//fix map-editor crash
 
 const CW = 64;//Cell width
 const WORLD_HEIGHT = 22; //In cells
 const WORLD_WIDTH = 22;
 const WORLD_CENTER_X = WORLD_WIDTH/2; //In cells
 const WORLD_CENTER_Y = WORLD_HEIGHT/2;
-const PLAYER_HITBOX_SIZE = 0.75;
-const BULLET_HITBOX_SIZE = 0.1;
-const ENEMY_HITBOX_SIZE = 1.5;
-const SPEED = 1;
-const ENEMY_SPEED = 0.1;
-const ENEMY_INTERVAL = 100000000000000000000000;
-const PLAYER_BULLET_SPEED = 12;
-const NUMBER_OF_GUN_TILES = 4;
 
-let number_of_bullet_tracers = 0;
+
+const PLAYER_HITBOX_SIZE = 0.75;
+const SPEED = 0.5;
+const PLAYER_BULLET_SPEED = 12;
+
+const ENEMY_HITBOX_SIZE = 0.5;
+const ENEMY_SPEED = 0.1;
+const ENEMY_INTERVAL = 1000;
+const ENEMY_BULLET_SPEED = 1;
+let enemy_bullet_interval = 1000;
+
+
+const BULLET_HITBOX_SIZE = 0.1;
+const NUMBER_OF_GUN_TILES = 4;
 let bullet_interval = 100;
 let bullets_per_shot = 1;
 
 let world = undefined;
 let player;
 let bullets = [];
+let enemy_bullets = [];
 let enemies = [];
 let bullet_particles = [];
 
 let player_tiles;
 let gun_tiles;
 let bullet_tile;
-let enemy_tile;
+let enemy_tiles;
 let tiles;
 let crosshairs;
 
@@ -82,7 +90,7 @@ let screen_shake_y = 0;
 
 let show_hitboxes = false;
 let show_tiles = true;
-let show_debug = true;
+let show_debug = false;
 let game_mode = 2;
 let gun_current = 0;
 
@@ -139,12 +147,14 @@ class World {
 }
 
 class Bullet {
-    constructor(x, y, dx, dy, speed) {
+    constructor(x, y, dx, dy, speed, size) {
         let l = (dx **2 + dy **2)**0.5
         this.dx = dx/l;
         this.dy = dy/l;
         this.x = x;
         this.y = y;
+        this.last_bullet_x = x;
+        this.last_bullet_y = y;
         if (gun_current == 1) {
             this.dx += Math.random()/2 - 0.25;
             this.dy += Math.random()/2 - 0.25;
@@ -153,6 +163,8 @@ class Bullet {
             this.dy += Math.random()/10 - 0.05;
         }
         this.speed = speed;
+        this.tracers = this.speed * (Math.round(interval*100)/100) * 32;
+        this.size = size;
         this.alive = true;
         this.dead_next_update = false;
     }
@@ -162,8 +174,8 @@ class Bullet {
             this.alive = false;
             
             //Creates particles
-            for (let i = 0; i < 30; i++) {
-                bullet_particles.push(new Particle(this.x, this.y, this.dx + Math.random() * 2 - 1, this.dy + Math.random() * 2 - 1, Math.random() + 0.5, now, Math.random() * 300 + 200, 0.0001));
+            for (let i = 0; i < this.speed * 2; i++) {
+                bullet_particles.push(new Particle(this.x, this.y, this.dx + Math.random() * 2 - 1, this.dy + Math.random() * 2 - 1, Math.random() + 0.5, now, Math.random() * 300 + 200, 0.01));
             }
         }
         let dx = this.dx * this.speed * interval;
@@ -173,18 +185,83 @@ class Bullet {
         let max_x = this.x + dx;
         let max_y = this.y + dy;
 
-        let number_of_checks = PLAYER_BULLET_SPEED * 4;
+        let number_of_checks = this.speed * 4;
         for (let checks = number_of_checks; checks > 0; checks --) {
             let step = checks/number_of_checks;
             let check_x = this.x + dx * step;
             let check_y = this.y + dy * step;
-            if (!world.is_passable(check_x, check_y, BULLET_HITBOX_SIZE)) {
+            if (!world.is_passable(check_x, check_y, this.size)) {
+                max_x = this.x + dx * (checks - 1) / number_of_checks;
+                max_y = this.y + dy * (checks - 1) / number_of_checks;
+                move = false;
+            }
+        }
+        this.last_bullet_x = this.x;
+        this.last_bullet_y = this.y;
+        this.x = max_x;
+        this.y = max_y;
+        if (!move) {
+            this.dead_next_update = true;
+        }
+    }
+    hitEnemy(x, y, now) {
+        this.x = x;
+        this.y = y;
+        this.alive = false;
+        for (let i = 0; i < this.speed; i++) {
+            bullet_particles.push(new Particle(this.x, this.y, -(this.dx + Math.random() * 2 - 1), -(this.dy + Math.random() * 2 - 1), (this.speed / 12) * Math.random() + this.speed / 24, now, Math.random() * 300 + 200, 0.01));
+        }
+    }
+}
+
+class EnemyBullet {
+    constructor(x, y, dx, dy, speed, size) {
+        let l = (dx **2 + dy **2)**0.5
+        this.dx = dx/l;
+        this.dy = dy/l;
+        this.x = x;
+        this.y = y;
+        this.last_bullet_x = x;
+        this.last_bullet_y = y;
+        this.dx += Math.random()/5 - 0.1;
+        this.dy += Math.random()/5 - 0.1;
+        this.speed = speed;
+        this.tracers = this.speed * (Math.round(interval*100)/100) * 32;
+        this.size = size;
+        this.alive = true;
+        this.dead_next_update = false;
+    }
+
+    update(now, interval) {
+        if (this.dead_next_update) {
+            this.alive = false;
+            
+            //Creates particles
+            for (let i = 0; i < this.speed * 2; i++) {
+                bullet_particles.push(new Particle(this.x, this.y, this.dx + Math.random() * 2 - 1, this.dy + Math.random() * 2 - 1, (this.speed / 12) * Math.random() + this.speed / 24, now, Math.random() * 300 + 200, 0.01));
+            }
+        }
+        let dx = this.dx * this.speed * interval;
+        let dy = this.dy * this.speed * interval;
+        
+        let move = true;
+        let max_x = this.x + dx;
+        let max_y = this.y + dy;
+
+        let number_of_checks = this.speed * 4;
+        for (let checks = number_of_checks; checks > 0; checks --) {
+            let step = checks/number_of_checks;
+            let check_x = this.x + dx * step;
+            let check_y = this.y + dy * step;
+            if (!world.is_passable(check_x, check_y, this.size)) {
                 max_x = this.x + dx * (checks - 1) / number_of_checks;
                 max_y = this.y + dy * (checks - 1) / number_of_checks;
                 move = false;
             }
         }
 
+        this.last_bullet_x = this.x;
+        this.last_bullet_y = this.y;
         this.x = max_x;
         this.y = max_y;
         if (!move) {
@@ -192,6 +269,7 @@ class Bullet {
         }
     }
 }
+
 
 /*
 class gun {
@@ -228,46 +306,95 @@ class Player {
 }
 
 class Enemy {
-    constructor(x, y, dx, dy, speed) {
-        let l = (dx **2 + dy **2)**0.5;
+    constructor(x, y, speed, health, fire_speed, range, now) {
         this.x = x;
         this.y = y;
-        this.dx = dx/l;
-        this.dy = dy/l;
+        this.knockback_x = 0;
+        this.knockback_y = 0;
         this.speed = speed;
+        this.health = health;
+        this.fire_speed = fire_speed;
+        this.range = range;
+        this.last_update = now;
+        this.direction = Math.atan(-player.y/player.x);
+        this.gun_direction = 
+        this.enemy_last_bullet_time = now;
         this.alive = true;
     }
-    update(interval) {
-        let dx = player.x - this.x;
-        let dy = player.y - this.y;
-        let l = (dx **2 + dy **2)**0.5;
-        dx = dx / l;
-        dy = dy / l;
-        dx = dx * this.speed * interval;
-        dy = dy * this.speed * interval;
-        let new_x = this.x + dx;
-        let new_y = this.y + dy;
+    update(now, interval) {
+        /*
+        if (now - this.last_update < this.update_speed) {
+            return;
+        }
+        */
+
+        //let choice = Math.floor(Math.random() * 5);
+
+        let try_x = 0;
+        let try_y = 0;
+
+        if (distance(player.x, this.x, player.y, this.y) < this.range) {
+            if (now - this.enemy_last_bullet_time > this.fire_speed) {
+                this.enemy_last_bullet_time = now;
+                this.shoot();
+            }
+        } else {
+            let dx = player.x - this.x;
+            let dy = player.y - this.y;
+            let l = (dx **2 + dy **2)**0.5;
+            dx = dx / l;
+            dy = dy / l;
+            dx = dx * this.speed * interval;
+            dy = dy * this.speed * interval;
+            try_x = dx;
+            try_y = dy;
+        }
+
+        let new_x = this.x + try_x + this.knockback_x;
+        let new_y = this.y + try_y + this.knockback_y;
         if (world.is_passable(new_x, this.y, ENEMY_HITBOX_SIZE)) {
             this.x = new_x;
         }
         if (world.is_passable(this.x, new_y, ENEMY_HITBOX_SIZE)) {
             this.y = new_y;
         }
-        if (this.touchBullet(interval)) {
+        this.knockback_x = this.knockback_x / (interval * 10);
+        this.knockback_y = this.knockback_y / (interval * 10);
+
+        let times_hit = this.touchBullet(now, interval);
+        this.health = this.health - times_hit;
+        if (this.health < 1 ) {
             this.alive = false;
         }
     }
-    touchBullet(interval) {
+    shoot() {
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        enemy_bullets.push(new EnemyBullet(this.x, this.y, dx, dy, ENEMY_BULLET_SPEED, BULLET_HITBOX_SIZE));
+    }
+    touchBullet(now, interval) {
         let b = new Box(this.x, this.y, ENEMY_HITBOX_SIZE, ENEMY_HITBOX_SIZE);
+        let times_hit = 0;
         for (let i = 0; i < bullets.length; i ++) {
-            let b2 = new Box(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE, BULLET_HITBOX_SIZE);
-            let b3 = new Box(bullets[i].x - bullets[i].dx * bullets[i].speed * interval, bullets[i].y - bullets[i].dy * bullets[i].speed * interval, BULLET_HITBOX_SIZE, BULLET_HITBOX_SIZE);
-            if (b.intersects(b2) || b.intersects(b3)) {
-                bullets[i].alive = false;
-                return true;
+            console.log(bullets[i].speed);
+            for (let fraction = 1; fraction <= bullets[i].speed; fraction ++) {
+                let step = fraction/bullets[i].speed;
+                let check_x = bullets[i].last_bullet_x + step * (bullets[i].x - bullets[i].last_bullet_x);
+                let check_y = bullets[i].last_bullet_y + step * (bullets[i].y - bullets[i].last_bullet_y);
+                let b2 = new Box(check_x, check_y, bullets[i].size, bullets[i].size);
+                if (b.intersects(b2)) {
+                    bullets[i].hitEnemy(check_x, check_y, now);
+                    this.knockback(bullets[i].dx, bullets[i].dy, bullets[i].speed, interval);
+                    times_hit++;
+                    break;
+                }
             }
         }
-        return false;
+        return times_hit;
+    }
+    knockback(dx, dy, a, interval) {
+        this.knockback_x += dx * a * interval / 10;
+        this.knockback_y += dy * a * interval / 10;
     }
 }
 
@@ -310,7 +437,6 @@ class Particle {
 
         let new_x = this.x + (this.dx * this.speed * interval);
         let new_y = this.y + (this.dy * this.speed * interval) + this.gravity_amount * interval;
-        console.log(new_x);
         
         if (!world.is_passable(new_x, this.y, BULLET_HITBOX_SIZE)) {
             this.dx = -this.dx;
@@ -361,7 +487,7 @@ function updateWorld(now, interval) {
 function setUpTiles() {
     let background_images = getImage("background_tiles.png");
     let player_images = getImage("bear_tiles.png");
-    let character_images = getImage("character_tiles.png");
+    let enemy_images = getImage("soldier_tiles.png");
     let bullet_images = getImage("bullet_tiles.png");
     let gun_images = getImage("gun_tiles.png");
     let crosshair_images = getImage("crosshair_tiles.png");
@@ -384,8 +510,11 @@ function setUpTiles() {
         gun_tiles[i] = new Tile(gun_images, i * 64, 0, 64, 0, -6);
     }
 
+    enemy_tiles = [];
+    for (let i = 0; i < 2; i ++)
+    enemy_tiles = new Tile(enemy_images, i * 64, 0, 64, -64 / 2, -64 / 2);
+
     bullet_tile = new Tile(bullet_images, 64 * 2, 0, 64, -1.5, -1.5);
-    enemy_tile = new Tile(character_images, 64, 0, 128, -64/2, -64);
 }
 
 function resize() {
@@ -503,6 +632,10 @@ function screenToWorldY(y) {
     
 }
 
+function distance(x1, x2, y1, y2) {
+    return Math.sqrt((x2 - x1)**2 + (y2-y1)**2);
+}
+
 //Checks if something is in the view(all parameters are in cell units)
 function inView(x, y, half_width, half_height) {
     if (x + half_width >= view_center_x - view_cell_width / 2 && x - half_width <= view_center_x + view_cell_width / 2) {
@@ -539,8 +672,8 @@ function drawCrosshair(ctx, tile, x, y) {
 
 function drawBullet(ctx, bullet) {
     ctx.save();
-    for (let i = 0; i < number_of_bullet_tracers; i++) {
-        ctx.globalAlpha = (number_of_bullet_tracers - i) / number_of_bullet_tracers;
+    for (let i = 0; i < bullet.tracers; i++) {
+        ctx.globalAlpha = (bullet.tracers - i) / bullet.tracers;
         drawTileWithTransform(ctx, bullet_tile, bullet.x - i * (bullet.dx/30), bullet.y - i * (bullet.dy/30));
     }
     ctx.restore();
@@ -646,10 +779,10 @@ function newBullet(now) {
     for (let i = 0; i < 10; i++) {
         bullet_particles.push(new Particle(front_of_gun_x, front_of_gun_y, mouse_x + Math.random()*50 - 25, mouse_y + Math.random()*50 - 25, Math.random() + 0.5, now, Math.random() * 50, 0));
     }
-    bullets.push(new Bullet(front_of_gun_x, front_of_gun_y, mouse_x, mouse_y, PLAYER_BULLET_SPEED));
+    bullets.push(new Bullet(front_of_gun_x, front_of_gun_y, mouse_x, mouse_y, PLAYER_BULLET_SPEED, BULLET_HITBOX_SIZE));
 }
 
-function spawnEnemy() {
+function spawnEnemy(now) {
     
     let rand_x = Math.random() * WORLD_WIDTH;
     let rand_y = Math.random() * WORLD_HEIGHT;
@@ -662,12 +795,10 @@ function spawnEnemy() {
             rand_y = Math.random() * WORLD_HEIGHT;
     }
 
-    enemies.push(new Enemy(rand_x, rand_y, player.x - rand_x, player.y - rand_y, ENEMY_SPEED));
+    enemies.push(new Enemy(rand_x, rand_y, ENEMY_SPEED, 3, enemy_bullet_interval, 5, now));
 }
 
 function updateGameWorld(now, interval) {
-
-    number_of_bullet_tracers = PLAYER_BULLET_SPEED * (Math.round(interval*100)/100) * 32;
 
     //checks for map editor
     if (key_f) {
@@ -770,12 +901,13 @@ function updateGameWorld(now, interval) {
     }
 
     if (now - last_enemy_time > ENEMY_INTERVAL) {
-        spawnEnemy();
+        spawnEnemy(now);
         last_enemy_time = now;
     }
 
     bullets.map(b => b.update(now, interval));
-    enemies.map(b => b.update(interval));
+    enemy_bullets.map(b => b.update(now, interval));
+    enemies.map(b => b.update(now, interval));
     bullet_particles.map(b => b.update(now, interval));
     
     drawGameWorld(now, interval);
@@ -843,11 +975,21 @@ function drawGameWorld(now, interval) {
         }
 
         for (let i = 0; i < enemies.length; i++) {
-            if (inView(enemies[i].x, enemies[i].y, enemy_tile.size/2/CW, enemy_tile.size/2/CW)) {
-                drawTileWithTransform(ctx, enemy_tile, enemies[i].x, enemies[i].y);
+            if (inView(enemies[i].x, enemies[i].y, enemy_tiles.size/2/CW, enemy_tiles.size/2/CW)) {
+                drawTileWithTransform(ctx, enemy_tiles, enemies[i].x, enemies[i].y);
+                ctx.fillStyle = "white";
+                ctx.fillText(enemies[i].health, worldToScreenX(enemies[i].x), worldToScreenY(enemies[i].y) - 20);
                 enemies_drawn = enemies_drawn + 1;
             }
         }
+
+        for (let i = 0; i < enemy_bullets.length; i++) {
+            if (inView(enemy_bullets[i].x, enemy_bullets[i].y, bullet_tile.size/2/CW, bullet_tile.size/2/CW)) {
+                drawBullet(ctx, enemy_bullets[i]);
+                bullets_drawn = bullets_drawn + 1;
+            }
+        }
+
 
         //Draws bullet particles
         for (let i = 0; i < bullet_particles.length; i++) {
@@ -874,14 +1016,14 @@ function drawGameWorld(now, interval) {
         }    
         //draws hitboxes for bullets
         for (let i = 0; i < bullets.length; i++) {
-            if (inView(bullets[i].x, bullets[i].y, BULLET_HITBOX_SIZE/2, BULLET_HITBOX_SIZE/2)) {
+            if (inView(bullets[i].x, bullets[i].y, bullets[i].size/2, bullets[i].size/2)) {
                 ctx.strokeStyle = "green";
                 ctx.beginPath();
-                ctx.moveTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y - BULLET_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(bullets[i].x + BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y - BULLET_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(bullets[i].x + BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y + BULLET_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y + BULLET_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(bullets[i].x - BULLET_HITBOX_SIZE / 2), worldToScreenY(bullets[i].y - BULLET_HITBOX_SIZE / 2));
+                ctx.moveTo(worldToScreenX(bullets[i].x - bullets[i].size / 2), worldToScreenY(bullets[i].y - bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(bullets[i].x + bullets[i].size / 2), worldToScreenY(bullets[i].y - bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(bullets[i].x + bullets[i].size / 2), worldToScreenY(bullets[i].y + bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(bullets[i].x - bullets[i].size / 2), worldToScreenY(bullets[i].y + bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(bullets[i].x - bullets[i].size / 2), worldToScreenY(bullets[i].y - bullets[i].size / 2));
                 ctx.stroke();
                 bullet_hitboxes_drawn = bullet_hitboxes_drawn + 1;
             }
@@ -898,6 +1040,21 @@ function drawGameWorld(now, interval) {
                 ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE / 2));
                 ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
                 ctx.stroke();
+            }
+        }
+
+        //enemy bullet hitboxes
+        for (let i = 0; i < enemy_bullets.length; i++) {
+            if (inView(enemy_bullets[i].x, enemy_bullets[i].y, enemy_bullets[i].size/2, enemy_bullets[i].size/2)) {
+                ctx.strokeStyle = "green";
+                ctx.beginPath();
+                ctx.moveTo(worldToScreenX(enemy_bullets[i].x - enemy_bullets[i].size / 2), worldToScreenY(enemy_bullets[i].y - enemy_bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(enemy_bullets[i].x + enemy_bullets[i].size / 2), worldToScreenY(enemy_bullets[i].y - enemy_bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(enemy_bullets[i].x + enemy_bullets[i].size / 2), worldToScreenY(enemy_bullets[i].y + enemy_bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(enemy_bullets[i].x - enemy_bullets[i].size / 2), worldToScreenY(enemy_bullets[i].y + enemy_bullets[i].size / 2));
+                ctx.lineTo(worldToScreenX(enemy_bullets[i].x - enemy_bullets[i].size / 2), worldToScreenY(enemy_bullets[i].y - enemy_bullets[i].size / 2));
+                ctx.stroke();
+                bullet_hitboxes_drawn = bullet_hitboxes_drawn + 1;
             }
         }
 
@@ -946,6 +1103,7 @@ function drawGameWorld(now, interval) {
 
 function updateGameWorldPost() {
     bullets = bullets.filter(x => x.alive == true);
+    enemy_bullets = enemy_bullets.filter(x => x.alive == true);
     enemies = enemies.filter(x => x.alive == true);
     bullet_particles = bullet_particles.filter(x => x.alive == true);
 }
