@@ -1,5 +1,9 @@
 let interval;
 let frame = 0;
+let fps = 0;
+let fps_frame = 0;
+let fps_reset_time = 0;
+let fps_timer = 0;
 let last_sim_time = 0;
 
 let gameObject;
@@ -57,6 +61,7 @@ function getImage(name) {
 
 function updateGame(now) {
     interval = now - last_sim_time; // interval is in ms
+    interval = interval / 64;
     if (last_sim_time == 0) {
         interval = 16;
     }
@@ -65,6 +70,13 @@ function updateGame(now) {
     }
     last_sim_time = now;
     frame++;
+    fps_frame++;
+    
+    if(now - fps_reset_time > 2000) {
+        fps_reset_time = now;
+        fps_frame = 0;
+    }
+    fps = fps_frame / (now - fps_reset_time) * 1000;
 
     gameObject.updateGame(now, interval)
 

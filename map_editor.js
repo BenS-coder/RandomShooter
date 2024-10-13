@@ -273,16 +273,16 @@ function updateMapEditor(now, interval) {
         }
     }
     if (key_w) {
-        map_editor_view_center_y = map_editor_view_center_y - map_editor_speed / interval;
+        map_editor_view_center_y = map_editor_view_center_y - map_editor_speed * interval;
     }
     if (key_s) {
-        map_editor_view_center_y = map_editor_view_center_y + map_editor_speed / interval;
+        map_editor_view_center_y = map_editor_view_center_y + map_editor_speed * interval;
     }
     if (key_a) {
-        map_editor_view_center_x = map_editor_view_center_x - map_editor_speed / interval;
+        map_editor_view_center_x = map_editor_view_center_x - map_editor_speed * interval;
     }
     if (key_d) {
-        map_editor_view_center_x = map_editor_view_center_x + map_editor_speed / interval;
+        map_editor_view_center_x = map_editor_view_center_x + map_editor_speed * interval;
     }
     drawMapEditor();
 }
