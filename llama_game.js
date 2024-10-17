@@ -2,11 +2,14 @@
 
 //To do:
 
+//Add ui
 //add enemy animations
 //add gun class and move player things into player class
+//organize a lot of things into classes
 //add rolling/dashing
 //add different hitboxes for bullet hits and wall collisions
 
+//fix inconsistency in dashing from fps
 //fix right click
 //fix screen scale
 //fix map-editor crash
@@ -18,15 +21,21 @@ const WORLD_CENTER_X = WORLD_WIDTH/2; //In cells
 const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 
 
-const PLAYER_HITBOX_SIZE = 0.75;
+const PLAYER_HITBOX_SIZE = 0.5;
 const SPEED = 0.5;
 const PLAYER_BULLET_SPEED = 12;
+const DASH_SPEED = 7;
+const DASH_COOLDOWN = 700;
+const DASH_DURATION = 100;
+let dash_amount = 0;
+let is_dashing = false;
 
 const ENEMY_HITBOX_SIZE = 0.5;
 const ENEMY_SPEED = 0.1;
 const ENEMY_INTERVAL = 1000;
 const ENEMY_BULLET_SPEED = 1;
-let enemy_bullet_interval = 1000;
+let enemy_bullet_interval = 100;
+let number_of_enemies = 10;
 
 
 const BULLET_HITBOX_SIZE = 0.1;
@@ -61,6 +70,7 @@ let key_f = false;
 let key_x = false;
 let key_q = false;
 let key_p = false;
+let key_space = false;
 let key_dash = false;
 let key_equals = false;
 let key_1 = false;
@@ -78,6 +88,7 @@ let last_enemy_time = 0;
 let last_player_x = 0;
 let last_player_y = 0;
 let real_speed = 0;
+let last_dash_time = 0;
 
 let view_center_x; //x coordinate of the center of the view in world (in cells)
 let view_center_y;
@@ -87,6 +98,7 @@ let view_cell_width; //In cells
 let view_cell_height;
 let screen_shake_x = 0;
 let screen_shake_y = 0;
+let damage_overlay = 0;
 
 let show_hitboxes = false;
 let show_tiles = true;
@@ -268,6 +280,15 @@ class EnemyBullet {
             this.dead_next_update = true;
         }
     }
+    hitPlayer(x, y, now) {
+        this.x = x;
+        this.y = y;
+        this.alive = false;
+        for (let i = 0; i < this.speed; i++) {
+            bullet_particles.push(new Particle(this.x, this.y, -(this.dx + Math.random() * 2 - 1), -(this.dy + Math.random() * 2 - 1), (this.speed / 12) * Math.random() + this.speed / 24, now, Math.random() * 300 + 200, 0.01));
+        }
+        damage_overlay = 1;
+    }
 }
 
 
@@ -285,23 +306,43 @@ class gun {
 */
 
 class Player {
-    constructor(x, y, size) { //size is in cell units
+    constructor(x, y, size, health) { //size is in cell units
         this.x = x;
         this.y = y;
         this.size = size;
+        this.health = health;
     }
     tryMove(dx, dy) {
         for (let i = 16; i > 0; i--) {
             let step = i/16;
             let new_x = this.x + step * dx;
             let new_y = this.y + step * dy;
-            if (world.is_passable(new_x, new_y, this.size)) {
+            if (world.is_passable(new_x, new_y + 1/4, this.size)) {
                 this.x = new_x;
                 this.y = new_y;
                 return true;
             }
         }
         return false;
+    }
+    touchBullet(now, interval) {
+        let b = new Box(this.x, this.y, PLAYER_HITBOX_SIZE, PLAYER_HITBOX_SIZE * 2);
+        let times_hit = 0;
+        for (let i = 0; i < enemy_bullets.length; i ++) {
+            for (let fraction = 1; fraction <= enemy_bullets[i].speed; fraction ++) {
+                let step = fraction/enemy_bullets[i].speed;
+                let check_x = enemy_bullets[i].last_bullet_x + step * (enemy_bullets[i].x - enemy_bullets[i].last_bullet_x);
+                let check_y = enemy_bullets[i].last_bullet_y + step * (enemy_bullets[i].y - enemy_bullets[i].last_bullet_y);
+                let b2 = new Box(check_x, check_y, enemy_bullets[i].size, enemy_bullets[i].size);
+                if (b.intersects(b2) && !is_dashing) {
+                    enemy_bullets[i].hitPlayer(check_x, check_y, now);
+                    times_hit++;
+                    screenShake(0.2, 100);
+                    break;
+                }
+            }
+        }
+        return times_hit;
     }
 }
 
@@ -352,10 +393,10 @@ class Enemy {
 
         let new_x = this.x + try_x + this.knockback_x;
         let new_y = this.y + try_y + this.knockback_y;
-        if (world.is_passable(new_x, this.y, ENEMY_HITBOX_SIZE)) {
+        if (world.is_passable(new_x, this.y + 1/4, ENEMY_HITBOX_SIZE)) {
             this.x = new_x;
         }
-        if (world.is_passable(this.x, new_y, ENEMY_HITBOX_SIZE)) {
+        if (world.is_passable(this.x, new_y + 1/4, ENEMY_HITBOX_SIZE)) {
             this.y = new_y;
         }
         this.knockback_x = this.knockback_x / (interval * 10);
@@ -373,7 +414,7 @@ class Enemy {
         enemy_bullets.push(new EnemyBullet(this.x, this.y, dx, dy, ENEMY_BULLET_SPEED, BULLET_HITBOX_SIZE));
     }
     touchBullet(now, interval) {
-        let b = new Box(this.x, this.y, ENEMY_HITBOX_SIZE, ENEMY_HITBOX_SIZE);
+        let b = new Box(this.x, this.y, ENEMY_HITBOX_SIZE, ENEMY_HITBOX_SIZE * 2);
         let times_hit = 0;
         for (let i = 0; i < bullets.length; i ++) {
             console.log(bullets[i].speed);
@@ -381,8 +422,8 @@ class Enemy {
                 let step = fraction/bullets[i].speed;
                 let check_x = bullets[i].last_bullet_x + step * (bullets[i].x - bullets[i].last_bullet_x);
                 let check_y = bullets[i].last_bullet_y + step * (bullets[i].y - bullets[i].last_bullet_y);
-                let b2 = new Box(check_x, check_y, bullets[i].size, bullets[i].size);
-                if (b.intersects(b2)) {
+                let b3 = new Box(check_x, check_y, bullets[i].size, bullets[i].size);
+                if (b.intersects(b3)) {
                     bullets[i].hitEnemy(check_x, check_y, now);
                     this.knockback(bullets[i].dx, bullets[i].dy, bullets[i].speed, interval);
                     times_hit++;
@@ -466,7 +507,7 @@ function gameSetUp() {
     world = new World(WORLD_WIDTH,WORLD_HEIGHT);
     createMap(world, world.width, world.height);
 
-    player = new Player(WORLD_CENTER_X,WORLD_CENTER_Y,PLAYER_HITBOX_SIZE);
+    player = new Player(WORLD_CENTER_X,WORLD_CENTER_Y,PLAYER_HITBOX_SIZE, 10);
 
     document.body.addEventListener('keydown', keydownHandler);
     document.body.addEventListener('keyup', keyupHandler);
@@ -544,6 +585,8 @@ function keydownHandler(e) {
         key_q = true;
     } else if (e.key == "p") {
         key_p = true;
+    } else if (e.key == " ") {
+        key_space = true;
     } else if (e.key == "-") {
         key_dash = true;
     } else if (e.key == "=") {
@@ -576,6 +619,8 @@ function keyupHandler(e) {
         key_q = false;
     } else if (e.key == "p") {
         key_p = false;
+    } else if (e.key == " ") {
+        key_space = false;
     } else if (e.key == "-") {
         key_dash = false;
     } else if (e.key == "=") {
@@ -680,12 +725,13 @@ function drawBullet(ctx, bullet) {
 }
 
 function screenShake(m, t) {
-    t = Math.floor(t / 10);
+    setTimeout(resetShake, t);
+    let fractions = Math.floor(t / 10);
     randShake(m);
-    for (let i = 0; i < t - 1; i++) {
-        setTimeout(randShake, 10, m / i);
+    for (let i = 0; i < 10; i++) {
+        setTimeout(randShake,i * fractions, m);
     }
-    setTimeout(resetShake, t * 10)
+    
 }
 
 function randShake(m) {
@@ -723,8 +769,22 @@ function CrosshairTileReset() {
     crosshair_frame = 0;
 }
 
+function drawOverlay(ctx, interval) {
+    if (damage_overlay > 0) {
+        ctx.save()
+        ctx.globalAlpha = (damage_overlay/2)/1;
+        ctx.fillStyle = "#9e1b11";
+        ctx.fillRect(0,0, view_width, view_height);
+        damage_overlay -= interval;
+        ctx.restore();
+    } 
+    if (damage_overlay < 0) {
+        damage_overlay = 0;
+    }    
+}
+
 function movePlayer(interval) {
-    let MS = SPEED*interval;
+    let MS = (SPEED + dash_amount)*interval;
     let DMS = MS/Math.sqrt(2);
     let doneMoving = false;
 
@@ -772,6 +832,10 @@ function movePlayer(interval) {
     
 }
 
+function activateDash(speed) {
+    dash_amount = speed;
+}
+
 function newBullet(now) {
     let l = (mouse_x **2 + mouse_y **2)**0.5
     let front_of_gun_x = player.x + mouse_x/l/2;
@@ -795,7 +859,7 @@ function spawnEnemy(now) {
             rand_y = Math.random() * WORLD_HEIGHT;
     }
 
-    enemies.push(new Enemy(rand_x, rand_y, ENEMY_SPEED, 3, enemy_bullet_interval, 5, now));
+    enemies.push(new Enemy(rand_x, rand_y, ENEMY_SPEED, 3, enemy_bullet_interval, 10, now));
 }
 
 function updateGameWorld(now, interval) {
@@ -806,6 +870,20 @@ function updateGameWorld(now, interval) {
         key_f = false;
     }
 
+    if (key_space) {
+        if (now - last_dash_time > DASH_COOLDOWN) {
+            activateDash(DASH_SPEED);
+            last_dash_time = now;
+        }
+    }
+    dash_amount = dash_amount / (interval * 10);
+    if (dash_amount < 0.1) {
+        is_dashing = false;
+        dash_amount = 0;
+    } else {
+        is_dashing = true;
+    }
+ 
     movePlayer(interval);
 
     view_center_x = player.x + mouse_x/CW/2 + screen_shake_x;
@@ -900,10 +978,13 @@ function updateGameWorld(now, interval) {
         }
     }
 
-    if (now - last_enemy_time > ENEMY_INTERVAL) {
+    if (now - last_enemy_time > ENEMY_INTERVAL && enemies.length < number_of_enemies) {
         spawnEnemy(now);
         last_enemy_time = now;
     }
+
+    let times_hit = player.touchBullet(now, interval);
+    player.health = player.health - times_hit;
 
     bullets.map(b => b.update(now, interval));
     enemy_bullets.map(b => b.update(now, interval));
@@ -968,10 +1049,10 @@ function drawGameWorld(now, interval) {
         }
 
         for (let i = 0; i < bullets.length; i++) {
-            if (inView(bullets[i].x, bullets[i].y, bullet_tile.size/2/CW, bullet_tile.size/2/CW)) {
-                drawBullet(ctx, bullets[i]);
-                bullets_drawn = bullets_drawn + 1;
-            }
+            //if (inView(bullets[i].x, bullets[i].y, bullet_tile.size/2/CW, bullet_tile.size/2/CW)) {
+            drawBullet(ctx, bullets[i]);
+            bullets_drawn = bullets_drawn + 1;
+            //}
         }
 
         for (let i = 0; i < enemies.length; i++) {
@@ -1034,11 +1115,20 @@ function drawGameWorld(now, interval) {
             if (inView(enemies[i].x, enemies[i].y, ENEMY_HITBOX_SIZE/2, ENEMY_HITBOX_SIZE/2)) {
                 ctx.strokeStyle = "red";
                 ctx.beginPath();
-                ctx.moveTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE / 2));
-                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE / 2));
+                ctx.moveTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
+                ctx.stroke();
+
+                ctx.strokeStyle = "red";
+                ctx.beginPath();
+                ctx.moveTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x + ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y + ENEMY_HITBOX_SIZE));
+                ctx.lineTo(worldToScreenX(enemies[i].x - ENEMY_HITBOX_SIZE / 2), worldToScreenY(enemies[i].y - ENEMY_HITBOX_SIZE));
                 ctx.stroke();
             }
         }
@@ -1061,12 +1151,22 @@ function drawGameWorld(now, interval) {
         //Draws hitbox for player
         ctx.strokeStyle = "purple";
         ctx.beginPath();
-        ctx.moveTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2));
-        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2));
-        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE / 2));
-        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE / 2));
-        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2));
+        ctx.moveTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE));
+        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE));
+        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE));
+        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE));
+        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE));
         ctx.stroke();
+
+        ctx.strokeStyle = "green";
+        ctx.beginPath();
+        ctx.moveTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2 + 1/4));
+        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2 + 1/4));
+        ctx.lineTo(worldToScreenX(player.x + PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE / 2 + 1/4));
+        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y + PLAYER_HITBOX_SIZE / 2 + 1/4));
+        ctx.lineTo(worldToScreenX(player.x - PLAYER_HITBOX_SIZE / 2), worldToScreenY(player.y - PLAYER_HITBOX_SIZE / 2 + 1/4));
+        ctx.stroke();
+
 
         //Calculates player speed
         real_speed = Math.fround(Math.sqrt(Math.pow(last_player_x - player.x,2) + Math.pow(last_player_y - player.y,2)))*CW;
@@ -1092,7 +1192,12 @@ function drawGameWorld(now, interval) {
         ctx.fillText(`Bullet particles drawn: ${bullet_particles_drawn}`, 20, 320);
         ctx.fillText(`Screen shake x, y: ${screen_shake_x}, ${screen_shake_y}`, 20, 400);
         ctx.fillText(`Current gun tile: ${gun_tile_current}`, 20, 420);
+        ctx.fillText(`Player health: ${player.health}`, 20, view_width - 20);
+        ctx.fillText(`dash_amount: ${dash_amount}`, 20, 520);
+        ctx.fillText(`Dashing: ${is_dashing}`, 20, 540);
     }
+
+    drawOverlay(ctx, interval);
 
     drawCrosshair(ctx, crosshairs[crosshair_frame], real_mouse_x, real_mouse_y);
 
