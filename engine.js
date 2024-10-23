@@ -38,6 +38,7 @@ function startGame(object) {
     gameObject.setUp();
 
     window.addEventListener("resize", resizeGame);
+    window.addEventListener("visibilitychange", visibilityChange);
     resizeGame();
 
     window.requestAnimationFrame(updateGame);
@@ -51,6 +52,12 @@ function resizeGame() {
     canvas.height = document.body.clientHeight;
     gameObject.resize();
 }
+
+
+function visibilityChange() {
+    gameObject.changeVisibility();
+}
+
 
 function getImage(name) {
     let image = new Image();

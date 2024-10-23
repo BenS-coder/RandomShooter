@@ -23,23 +23,24 @@ const WORLD_CENTER_Y = WORLD_HEIGHT/2;
 
 const PLAYER_HITBOX_SIZE = 0.5;
 const SPEED = 0.5;
-const PLAYER_BULLET_SPEED = 12;
-const DASH_SPEED = 7;
+const DASH_SPEED = 10;
 const DASH_COOLDOWN = 700;
 const DASH_DURATION = 100;
 let dash_amount = 0;
 let is_dashing = false;
+let player_max_health = 20;
 
 const ENEMY_HITBOX_SIZE = 0.5;
 const ENEMY_SPEED = 0.1;
 const ENEMY_INTERVAL = 1000;
 const ENEMY_BULLET_SPEED = 1;
 let enemy_bullet_interval = 100;
-let number_of_enemies = 10;
+let number_of_enemies = 5;
 
 
 const BULLET_HITBOX_SIZE = 0.1;
 const NUMBER_OF_GUN_TILES = 4;
+let player_bullet_speed = 12;
 let bullet_interval = 100;
 let bullets_per_shot = 1;
 
@@ -54,6 +55,7 @@ let player_tiles;
 let gun_tiles;
 let bullet_tile;
 let enemy_tiles;
+let health_bar;
 let tiles;
 let crosshairs;
 
@@ -107,6 +109,7 @@ let game_mode = 2;
 let gun_current = 0;
 
 let map_editor = false;
+let game_paused = false;
 
 class Box {
     constructor(x, y, width, height) {
@@ -187,7 +190,7 @@ class Bullet {
             
             //Creates particles
             for (let i = 0; i < this.speed * 2; i++) {
-                bullet_particles.push(new Particle(this.x, this.y, this.dx + Math.random() * 2 - 1, this.dy + Math.random() * 2 - 1, Math.random() + 0.5, now, Math.random() * 300 + 200, 0.01));
+                bullet_particles.push(new Particle(this.x, this.y, this.dx + Math.random() * 2 - 1, this.dy + Math.random() * 2 - 1, (this.speed / 12) * Math.random() + this.speed / 24, now, Math.random() * 300 + 200, 0.01));
             }
         }
         let dx = this.dx * this.speed * interval;
@@ -355,10 +358,11 @@ class Enemy {
         this.speed = speed;
         this.health = health;
         this.fire_speed = fire_speed;
+        this.stun_timer = 0;
         this.range = range;
         this.last_update = now;
         this.direction = Math.atan(-player.y/player.x);
-        this.gun_direction = 
+        this.gun_direction = 0;
         this.enemy_last_bullet_time = now;
         this.alive = true;
     }
@@ -374,8 +378,14 @@ class Enemy {
         let try_x = 0;
         let try_y = 0;
 
+        if (this.stun_timer > 0) {
+            this.stun_timer = this.stun_timer - interval * 10;
+        } else if (this.stun_timer < 0) {
+            this.stun_timer = 0;
+        }
+
         if (distance(player.x, this.x, player.y, this.y) < this.range) {
-            if (now - this.enemy_last_bullet_time > this.fire_speed) {
+            if (now - this.enemy_last_bullet_time > this.fire_speed && this.stun_timer == 0) {
                 this.enemy_last_bullet_time = now;
                 this.shoot();
             }
@@ -417,7 +427,6 @@ class Enemy {
         let b = new Box(this.x, this.y, ENEMY_HITBOX_SIZE, ENEMY_HITBOX_SIZE * 2);
         let times_hit = 0;
         for (let i = 0; i < bullets.length; i ++) {
-            console.log(bullets[i].speed);
             for (let fraction = 1; fraction <= bullets[i].speed; fraction ++) {
                 let step = fraction/bullets[i].speed;
                 let check_x = bullets[i].last_bullet_x + step * (bullets[i].x - bullets[i].last_bullet_x);
@@ -427,6 +436,7 @@ class Enemy {
                     bullets[i].hitEnemy(check_x, check_y, now);
                     this.knockback(bullets[i].dx, bullets[i].dy, bullets[i].speed, interval);
                     times_hit++;
+                    this.stun_timer = 50;
                     break;
                 }
             }
@@ -507,7 +517,7 @@ function gameSetUp() {
     world = new World(WORLD_WIDTH,WORLD_HEIGHT);
     createMap(world, world.width, world.height);
 
-    player = new Player(WORLD_CENTER_X,WORLD_CENTER_Y,PLAYER_HITBOX_SIZE, 10);
+    player = new Player(WORLD_CENTER_X,WORLD_CENTER_Y,PLAYER_HITBOX_SIZE, player_max_health);
 
     document.body.addEventListener('keydown', keydownHandler);
     document.body.addEventListener('keyup', keyupHandler);
@@ -518,10 +528,15 @@ function gameSetUp() {
 
 //this is called by engine.js
 function updateWorld(now, interval) {
-    if (!map_editor) {
-        updateGameWorld(now,interval);
-    } else {
-        updateMapEditor(now, interval);
+    if (game_paused = true) {
+        if (!map_editor) {
+            updateGameWorld(now,interval);
+            console.log("Game running")
+        } else {
+            updateMapEditor(now, interval);
+            
+            
+        }
     }
 }
 
@@ -532,6 +547,7 @@ function setUpTiles() {
     let bullet_images = getImage("bullet_tiles.png");
     let gun_images = getImage("gun_tiles.png");
     let crosshair_images = getImage("crosshair_tiles.png");
+    let health_bar_image = getImage("health_Bar.png");
 
     tiles = [];
     for (let i = 0; i < number_of_tiles; i++) {
@@ -556,6 +572,8 @@ function setUpTiles() {
     enemy_tiles = new Tile(enemy_images, i * 64, 0, 64, -64 / 2, -64 / 2);
 
     bullet_tile = new Tile(bullet_images, 64 * 2, 0, 64, -1.5, -1.5);
+
+    health_bar = new Tile(health_bar_image, 0, 0, 320, 0, 0);
 }
 
 function resize() {
@@ -566,6 +584,17 @@ function resize() {
     map_editor_view_height = view_height;
     view_cell_width = view_width/CW; 
     view_cell_height = view_height/CW;
+}
+
+function changeVisibility() {
+    /*
+    console.log(document.hidden);
+    if (document.hidden = true) {
+        game_paused = true;
+    } else {
+        game_paused = false;
+    }
+    */
 }
 
 function keydownHandler(e) {
@@ -746,8 +775,8 @@ function resetShake() {
 
 function gunShake(dx, dy, m) {
     let l = (dx **2 + dy **2)**0.5;
-    screen_shake_x = dx / l * m + Math.random() / 20 - 0.05;
-    screen_shake_y = dy / l * m + Math.random() / 20 - 0.05;
+    screen_shake_x = dx / l * m + Math.random() / 10 - 0.05;
+    screen_shake_y = dy / l * m + Math.random() / 10 - 0.05;
 
 }
 
@@ -781,6 +810,25 @@ function drawOverlay(ctx, interval) {
     if (damage_overlay < 0) {
         damage_overlay = 0;
     }    
+}
+
+function drawHealthBar(x, y, ctx) {
+    let health = player.health;
+    if (health < 0) {
+        health = 0;
+    }
+    let increments = 284 / player_max_health;
+    ctx.save();
+    ctx.fillStyle = "#a32424";
+    ctx.fillRect(x + 4, y + 4, Math.round(health * increments), 56);
+    ctx.fillStyle = "#8c1f1f";
+    ctx.fillRect(x + 4, y + 4, Math.round(health * increments), 32);
+    ctx.fillStyle = "#e3aeaa";
+    ctx.fillRect(x + 4 + Math.round(health * increments) - 4, y + 4, 4, 56);
+    ctx.fillStyle = "black";
+    ctx.fillRect(x + 4 + Math.round(health * increments), y + 4, 4, 56);
+    ctx.drawImage(health_bar.image, x, y, health_bar.size, health_bar.size);
+    ctx.restore();
 }
 
 function movePlayer(interval) {
@@ -843,7 +891,7 @@ function newBullet(now) {
     for (let i = 0; i < 10; i++) {
         bullet_particles.push(new Particle(front_of_gun_x, front_of_gun_y, mouse_x + Math.random()*50 - 25, mouse_y + Math.random()*50 - 25, Math.random() + 0.5, now, Math.random() * 50, 0));
     }
-    bullets.push(new Bullet(front_of_gun_x, front_of_gun_y, mouse_x, mouse_y, PLAYER_BULLET_SPEED, BULLET_HITBOX_SIZE));
+    bullets.push(new Bullet(front_of_gun_x, front_of_gun_y, mouse_x, mouse_y, player_bullet_speed, BULLET_HITBOX_SIZE));
 }
 
 function spawnEnemy(now) {
@@ -859,7 +907,7 @@ function spawnEnemy(now) {
             rand_y = Math.random() * WORLD_HEIGHT;
     }
 
-    enemies.push(new Enemy(rand_x, rand_y, ENEMY_SPEED, 3, enemy_bullet_interval, 10, now));
+    enemies.push(new Enemy(rand_x, rand_y, ENEMY_SPEED, 5, enemy_bullet_interval, 10, now));
 }
 
 function updateGameWorld(now, interval) {
@@ -902,7 +950,7 @@ function updateGameWorld(now, interval) {
         key_3 = false;
     }
     if (key_q) {
-        if (gun_current < 2) {
+        if (gun_current < 3) {
             gun_current++;
         } else {
             gun_current = 0;
@@ -954,13 +1002,20 @@ function updateGameWorld(now, interval) {
     
     //gun stuff
     if (gun_current == 0) {
+        player_bullet_speed = 12;
         bullets_per_shot = 1;
         bullet_interval = 100;
     } else if (gun_current == 1) {
+        player_bullet_speed = 12;
         bullets_per_shot = 15;
         bullet_interval = 500;
     } else if (gun_current == 2) {
+        player_bullet_speed = 12;
         bullets_per_shot = 1;
+        bullet_interval = 30;
+    } else if (gun_current == 3) {
+        player_bullet_speed = 100;
+        bullets_per_shot = 5;
         bullet_interval = 30;
     }
 
@@ -969,7 +1024,7 @@ function updateGameWorld(now, interval) {
             crosshair_frame = 1;
             gunFireAnimation();
             setTimeout(CrosshairTileReset, bullet_interval / 2);
-            gunShake(mouse_x, mouse_y, 0.04);
+            gunShake(mouse_x, mouse_y, 0.07);
             setTimeout(resetShake, 20);
             for (let i = bullets_per_shot; i > 0; i--) {
                 newBullet(now);
@@ -1192,12 +1247,14 @@ function drawGameWorld(now, interval) {
         ctx.fillText(`Bullet particles drawn: ${bullet_particles_drawn}`, 20, 320);
         ctx.fillText(`Screen shake x, y: ${screen_shake_x}, ${screen_shake_y}`, 20, 400);
         ctx.fillText(`Current gun tile: ${gun_tile_current}`, 20, 420);
-        ctx.fillText(`Player health: ${player.health}`, 20, view_width - 20);
         ctx.fillText(`dash_amount: ${dash_amount}`, 20, 520);
         ctx.fillText(`Dashing: ${is_dashing}`, 20, 540);
+        ctx.fillText(`Player health: ${player.health}`, 20, view_height - 20);
     }
 
     drawOverlay(ctx, interval);
+
+    drawHealthBar(12, 4, ctx);
 
     drawCrosshair(ctx, crosshairs[crosshair_frame], real_mouse_x, real_mouse_y);
 
@@ -1213,5 +1270,5 @@ function updateGameWorldPost() {
     bullet_particles = bullet_particles.filter(x => x.alive == true);
 }
 
-startGame({setUp: gameSetUp, resize: resize, updateGame: updateWorld});
+startGame({setUp: gameSetUp, resize: resize, updateGame: updateWorld, changeVisibility: changeVisibility});
 
