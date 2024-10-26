@@ -72,8 +72,8 @@ function updateGame(now) {
     if (last_sim_time == 0) {
         interval = 16;
     }
-    if (interval > 100) {
-        interval = 100;
+    if (interval > 10) {
+        interval = 10;
     }
     last_sim_time = now;
     frame++;

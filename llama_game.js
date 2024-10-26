@@ -528,13 +528,12 @@ function gameSetUp() {
 
 //this is called by engine.js
 function updateWorld(now, interval) {
-    if (game_paused = true) {
+    console.log(game_paused);
+    if (game_paused == false) {
         if (!map_editor) {
             updateGameWorld(now,interval);
-            console.log("Game running")
         } else {
             updateMapEditor(now, interval);
-            
             
         }
     }
@@ -587,14 +586,11 @@ function resize() {
 }
 
 function changeVisibility() {
-    /*
-    console.log(document.hidden);
-    if (document.hidden = true) {
+    if (document.hidden) {
         game_paused = true;
     } else {
         game_paused = false;
     }
-    */
 }
 
 function keydownHandler(e) {
