@@ -577,7 +577,6 @@ function setUpTiles() {
 
 function resize() {
     view_width = canvas.width & ~1;
-    view_width = view_width;
     view_height = canvas.height & ~1;
     map_editor_view_width = view_width;
     map_editor_view_height = view_height;
@@ -625,6 +624,10 @@ function keydownHandler(e) {
     } else {
         return true;
     }
+
+    e.preventDefault();
+    return false;
+    
 }
 
 function keyupHandler(e) {
@@ -659,6 +662,9 @@ function keyupHandler(e) {
     } else {
         return true;
     }
+
+    e.preventDefault();
+    return false;
 }
 
 function mousemoveHandler(e) {

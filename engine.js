@@ -25,6 +25,7 @@ function startGame(object) {
 	canvas.style.top = "0px";
     canvas.style.left = "0px";
     canvas.style.background = "black";
+    canvas.style.outline = "none";
     body.appendChild(canvas); //Adds canvas to the body
 
     canvas.tabIndex = 1; //Focuses the keyboard on the canvas
